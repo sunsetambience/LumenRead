@@ -1,0 +1,3773 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#0E1015">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <title>LumenRead 10 — Android Reader</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&family=Merriweather:wght@400;700&display=swap" rel="stylesheet">
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #0E1015;
+            --text-color: #E6E1D6;
+            --accent-color: #E5A93C;
+            --accent-glow: rgba(229, 169, 60, 0.28);
+            --glass-bg: rgba(20, 24, 34, 0.96);
+            --glass-border: rgba(255, 255, 255, 0.15);
+            --reader-font: 'Literata', Georgia, serif;
+            --font-size: 20px;
+            --line-height: 1.68;
+            --side-margin: 24px;
+            --para-spacing: 0.95em;
+            --para-indent: 1.25em;
+            --text-align: left;
+            --font-weight: 400;
+        }
+
+        [data-theme="sepia"] {
+            --bg-color: #F4ECD8;
+            --text-color: #362D22;
+            --accent-color: #B85D19;
+            --accent-glow: rgba(184, 93, 25, 0.22);
+            --glass-bg: rgba(238, 227, 203, 0.97);
+            --glass-border: rgba(59, 50, 40, 0.18);
+        }
+
+        [data-theme="light"] {
+            --bg-color: #FAFAFA;
+            --text-color: #18181B;
+            --accent-color: #2563EB;
+            --accent-glow: rgba(37, 99, 235, 0.22);
+            --glass-bg: rgba(255, 255, 255, 0.97);
+            --glass-border: rgba(0, 0, 0, 0.14);
+        }
+
+        [data-theme="oled"] {
+            --bg-color: #000000;
+            --text-color: #D4D4D8;
+            --accent-color: #10B981;
+            --accent-glow: rgba(16, 185, 129, 0.28);
+            --glass-bg: rgba(12, 12, 14, 0.98);
+            --glass-border: rgba(255, 255, 255, 0.16);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        html, body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Inter', -apple-system, sans-serif;
+            transition: background-color 0.25s ease, color 0.25s ease;
+            overflow-x: hidden;
+            width: 100%;
+            height: 100%;
+            user-select: none;
+        }
+
+        body.scroll-mode-body {
+            overflow-y: auto;
+            height: auto;
+            min-height: 100vh;
+        }
+
+        body.paged-mode-body {
+            overflow: hidden;
+            position: fixed;
+            inset: 0;
+        }
+
+        /* НОЧНОЙ ДИММЕР ЯРКОСТИ И ТЕПЛЫЙ ФИЛЬТР */
+        .screen-dimmer-overlay {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 999;
+            background: rgba(0, 0, 0, 0);
+            transition: background 0.15s ease;
+        }
+
+        /* ИНДИКАТОР ЖЕСТА ЯРКОСТИ ПО ЛЕВОМУ КРАЮ */
+        .brightness-hud-pill {
+            position: fixed;
+            left: 20px;
+            top: 50%;
+            transform: translateY(-50%) scale(0.9);
+            background: var(--glass-bg);
+            border: 1px solid var(--accent-color);
+            color: var(--text-color);
+            padding: 14px 10px;
+            border-radius: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            z-index: 950;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+            box-shadow: 0 12px 30px rgba(0,0,0,0.6);
+        }
+
+        .brightness-hud-pill.show {
+            opacity: 1;
+            transform: translateY(-50%) scale(1);
+        }
+
+        .brightness-bar-track {
+            width: 8px;
+            height: 110px;
+            background: rgba(128,128,128,0.25);
+            border-radius: 6px;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            align-items: flex-end;
+        }
+
+        .brightness-bar-fill {
+            width: 100%;
+            background: var(--accent-color);
+            height: 100%;
+            transition: height 0.08s ease;
+        }
+
+        /* ЗОЛОТАЯ ФИЗИЧЕСКАЯ ЗАКЛАДКА-ЛЯССЕ В ПРАВОМ ВЕРХНЕМ УГЛУ */
+        .ribbon-bookmark {
+            position: fixed;
+            top: -58px;
+            right: 28px;
+            width: 28px;
+            height: 76px;
+            background: linear-gradient(180deg, #B45309 0%, #F59E0B 60%, #D97706 100%);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.55);
+            z-index: 60;
+            cursor: pointer;
+            transition: top 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+            clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 82%, 0 100%);
+        }
+
+        .ribbon-bookmark.active {
+            top: 0px;
+        }
+
+        /* СВЕТОВОЕ КОЛЬЦО «ПУЛЬС СВЕТА» ПРИ УДЕРЖАНИИ ПАЛЬЦА (0.35 СЕК) */
+        .pulse-light-ring {
+            position: fixed;
+            width: 96px;
+            height: 96px;
+            margin-left: -48px;
+            margin-top: -48px;
+            border-radius: 50%;
+            border: 3px solid var(--accent-color);
+            background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+            box-shadow: 0 0 30px var(--accent-color);
+            pointer-events: none;
+            z-index: 980;
+            transform: scale(0.1);
+            opacity: 0;
+            transition: transform 0.36s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.25s ease;
+        }
+
+        .pulse-light-ring.charging {
+            transform: scale(1.25);
+            opacity: 1;
+        }
+
+        /* ЧИСТЫЙ ХОЛСТ ЧТЕНИЯ (100% ТОЛЬКО ТЕКСТ) */
+        .reader-stage {
+            width: 100%;
+            height: calc(100vh - 30px);
+            max-width: 860px;
+            margin: 0 auto;
+            padding: 26px var(--side-margin) 14px var(--side-margin);
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .reader-stage.wide-tablet-stage {
+            max-width: 1320px;
+        }
+
+        body.scroll-mode-body .reader-stage {
+            height: auto;
+            min-height: calc(100vh - 30px);
+            padding-bottom: 80px;
+            overflow: visible;
+        }
+
+        .book-content {
+            font-family: var(--reader-font);
+            font-size: var(--font-size);
+            line-height: var(--line-height);
+            text-align: var(--text-align);
+            font-weight: var(--font-weight);
+            width: 100%;
+            height: 100%;
+            transition: opacity 0.18s ease, transform 0.18s ease;
+            user-select: text;
+        }
+
+        .book-content.two-columns-active {
+            column-count: 2;
+            column-gap: 48px;
+            column-rule: 1px solid var(--glass-border);
+        }
+
+        .book-content.page-turning {
+            opacity: 0.15;
+            transform: translateY(4px);
+        }
+
+        .book-content p {
+            margin-bottom: var(--para-spacing);
+            text-indent: var(--para-indent);
+            padding: 2px 4px;
+            border-radius: 8px;
+            border-left: 3px solid transparent;
+            break-inside: avoid;
+        }
+
+        .book-content p.section-divider {
+            text-indent: 0;
+            font-weight: 700;
+            color: var(--accent-color);
+            font-size: 1.16em;
+            margin-top: 0.6em;
+            margin-bottom: 0.6em;
+            text-align: left;
+        }
+
+        .book-content p.digest-card-block {
+            text-indent: 0;
+            background: rgba(128, 128, 128, 0.08);
+            border: 1px solid var(--glass-border);
+            border-left: 4px solid var(--accent-color);
+            padding: 12px 15px;
+            border-radius: 14px;
+            margin-bottom: 12px;
+            text-align: left;
+        }
+
+        .book-content p.tts-active-p {
+            background: var(--accent-glow);
+            border-left-color: var(--accent-color);
+        }
+
+        .book-content p.saved-quote-flash {
+            background: rgba(52, 211, 153, 0.28);
+            border-left-color: #34D399;
+        }
+
+        /* Скрытый измеритель для точной постраничной разбивки без обрезанных строк */
+        #pageMeasurer {
+            position: fixed;
+            top: -9999px;
+            left: -9999px;
+            visibility: hidden;
+            pointer-events: none;
+            font-family: var(--reader-font);
+            font-size: var(--font-size);
+            line-height: var(--line-height);
+            text-align: var(--text-align);
+            font-weight: var(--font-weight);
+        }
+
+        #pageMeasurer p {
+            margin-bottom: var(--para-spacing);
+            text-indent: var(--para-indent);
+            padding: 2px 4px;
+        }
+
+        /* КРОШЕЧНАЯ СТРОКА НОМЕРА СТРАНИЦЫ НА ПОЛЯХ ВНИЗУ */
+        .zen-margin-footer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 28px;
+            background: var(--bg-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 var(--side-margin);
+            font-size: 12px;
+            font-weight: 500;
+            opacity: 0.62;
+            z-index: 45;
+            user-select: none;
+        }
+
+        .zen-progress-line {
+            position: fixed;
+            bottom: 28px;
+            left: 0;
+            height: 2px;
+            background: var(--accent-color);
+            width: 0%;
+            z-index: 46;
+            transition: width 0.15s ease;
+        }
+
+        /* ДОК СВЕРНУТЫХ ОКОН */
+        .minimized-dock {
+            position: fixed;
+            bottom: 36px;
+            right: 14px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            z-index: 85;
+        }
+
+        .minimized-pill {
+            background: var(--glass-bg);
+            backdrop-filter: blur(18px);
+            border: 1.5px solid var(--accent-color);
+            color: var(--text-color);
+            padding: 8px 14px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.6);
+        }
+
+        /* =========================================================================
+           КРУПНЫЙ ЭРГОНОМИЧНЫЙ ИНТЕРФЕЙС ОКОН (ШРИФТЫ 15px–20px, КРУПНЫЕ КНОПКИ)
+           ========================================================================= */
+        .drawer-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.72);
+            backdrop-filter: blur(8px);
+            z-index: 90;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 12px;
+        }
+
+        .drawer-overlay.open { display: flex; }
+
+        .modal-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(30px);
+            border: 1px solid var(--glass-border);
+            border-radius: 26px;
+            width: 100%;
+            max-width: 680px;
+            max-height: 92vh;
+            overflow-y: auto;
+            padding: 22px;
+            color: var(--text-color);
+            box-shadow: 0 28px 65px rgba(0,0,0,0.8);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-card.maximized {
+            max-width: 98vw;
+            width: 98vw;
+            height: 95vh;
+            max-height: 95vh;
+            border-radius: 18px;
+        }
+
+        .window-titlebar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 14px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid var(--glass-border);
+            gap: 10px;
+        }
+
+        .window-title-text {
+            font-size: 19px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .window-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .win-btn {
+            width: 38px;
+            height: 38px;
+            border-radius: 11px;
+            border: 1px solid var(--glass-border);
+            background: rgba(128, 128, 128, 0.14);
+            color: var(--text-color);
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .win-btn:hover {
+            border-color: var(--accent-color);
+            background: var(--accent-glow);
+        }
+
+        .win-btn.close-win:hover {
+            border-color: #F87171;
+            background: rgba(248, 113, 113, 0.25);
+            color: #F87171;
+        }
+
+        /* ЕДИНЫЙ ЦЕНТР УПРАВЛЕНИЯ (ОТКРЫВАЕТСЯ ПО УДЕРЖАНИЮ ПАЛЬЦА «ПУЛЬС СВЕТА») */
+        .hub-book-header {
+            background: rgba(128, 128, 128, 0.1);
+            border: 1px solid var(--glass-border);
+            border-radius: 18px;
+            padding: 14px 16px;
+            margin-bottom: 16px;
+        }
+
+        .hub-book-title {
+            font-size: 17px;
+            font-weight: 700;
+            color: var(--accent-color);
+            margin-bottom: 4px;
+        }
+
+        .hub-book-meta {
+            font-size: 14px;
+            opacity: 0.8;
+            margin-bottom: 12px;
+        }
+
+        .hub-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        @media (min-width: 560px) {
+            .hub-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        .hub-tile-btn {
+            background: rgba(128, 128, 128, 0.1);
+            border: 1px solid var(--glass-border);
+            border-radius: 18px;
+            padding: 16px 12px;
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            min-height: 92px;
+            text-align: center;
+        }
+
+        .hub-tile-btn:hover, .hub-tile-btn.active-tile {
+            border-color: var(--accent-color);
+            background: var(--accent-glow);
+        }
+
+        .hub-tile-icon {
+            font-size: 26px;
+        }
+
+        .hub-tile-label {
+            font-size: 15px;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+
+        .hub-tile-sub {
+            font-size: 12px;
+            opacity: 0.7;
+        }
+
+        /* КРУПНЫЕ КНОПКИ И ЭЛЕМЕНТЫ УПРАВЛЕНИЯ (15px–16px) */
+        .tts-ctrl-btn {
+            background: rgba(128, 128, 128, 0.16);
+            border: 1px solid var(--glass-border);
+            color: var(--text-color);
+            padding: 11px 15px;
+            border-radius: 13px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .tts-ctrl-btn:hover { border-color: var(--accent-color); }
+
+        .tts-ctrl-btn.primary {
+            background: var(--accent-color);
+            color: #000;
+            border-color: var(--accent-color);
+            font-weight: 700;
+        }
+
+        .setting-row { margin-bottom: 18px; }
+        .setting-label {
+            font-size: 15px;
+            font-weight: 600;
+            opacity: 0.9;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .segmented-control {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+
+        @media (min-width: 480px) {
+            .segmented-control.cols-4 {
+                grid-template-columns: repeat(4, 1fr);
+            }
+            .segmented-control.cols-3 {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        .segment-btn {
+            padding: 12px 10px;
+            border-radius: 13px;
+            border: 1px solid var(--glass-border);
+            background: rgba(128, 128, 128, 0.1);
+            color: var(--text-color);
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s;
+        }
+
+        .segment-btn.active {
+            border-color: var(--accent-color);
+            background: var(--accent-glow);
+            color: var(--accent-color);
+            font-weight: 700;
+        }
+
+        input[type="range"].ai-slider {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 8px;
+            background: rgba(128, 128, 128, 0.3);
+            border-radius: 6px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        input[type="range"].ai-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            background: var(--accent-color);
+            box-shadow: 0 0 12px var(--accent-color);
+            border: 3px solid var(--bg-color);
+            cursor: pointer;
+        }
+
+        .api-input, .voice-select {
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: 13px;
+            border: 1px solid var(--glass-border);
+            background: rgba(0, 0, 0, 0.35);
+            color: var(--text-color);
+            font-size: 15px;
+            outline: none;
+        }
+
+        /* КАРТОЧКИ ДИСТИЛЛЯТОРА (100% / 70% / 40% / 10%) */
+        .distiller-cards-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+            margin: 14px 0;
+        }
+
+        @media (min-width: 520px) {
+            .distiller-cards-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        .distill-option-card {
+            padding: 15px;
+            border-radius: 16px;
+            border: 1.5px solid var(--glass-border);
+            background: rgba(128, 128, 128, 0.08);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .distill-option-card.active {
+            border-color: var(--accent-color);
+            background: var(--accent-glow);
+        }
+
+        .distill-opt-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--accent-color);
+            margin-bottom: 5px;
+        }
+
+        .distill-opt-desc {
+            font-size: 14px;
+            opacity: 0.88;
+            line-height: 1.4;
+        }
+
+        /* NOTEBOOKLM MINDMAP (ДЕРЕВО СМЫСЛОВ БЕЗ МУСОРА) И ДОСЬЕ ГЕРОЕВ */
+        .notebooklm-tree-container {
+            background: rgba(0, 0, 0, 0.28);
+            border: 1px solid var(--glass-border);
+            border-radius: 18px;
+            padding: 16px;
+            max-height: 62vh;
+            overflow: auto;
+        }
+
+        .nlm-root-box {
+            background: var(--accent-glow);
+            border: 2px solid var(--accent-color);
+            color: var(--text-color);
+            padding: 14px 18px;
+            border-radius: 16px;
+            font-weight: 700;
+            font-size: 16px;
+            margin-bottom: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .nlm-branch-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding-left: 16px;
+            border-left: 3px solid rgba(229, 169, 60, 0.45);
+        }
+
+        .nlm-branch-card {
+            background: rgba(128, 128, 128, 0.1);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 14px 16px;
+        }
+
+        .nlm-branch-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 16px;
+            color: #38BDF8;
+            gap: 10px;
+            line-height: 1.35;
+        }
+
+        .nlm-expand-badge {
+            background: rgba(56, 189, 248, 0.18);
+            border: 1px solid rgba(56, 189, 248, 0.45);
+            color: #38BDF8;
+            padding: 4px 10px;
+            border-radius: 10px;
+            font-size: 13px;
+            white-space: nowrap;
+        }
+
+        .nlm-children-wrap {
+            margin-top: 12px;
+            padding-left: 14px;
+            border-left: 2px solid rgba(56, 189, 248, 0.4);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .nlm-children-hidden { display: none; }
+
+        .nlm-leaf-node {
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 12px 14px;
+            font-size: 14.5px;
+            line-height: 1.48;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .dossier-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 14px;
+            max-height: 62vh;
+            overflow-y: auto;
+        }
+
+        @media (min-width: 540px) {
+            .dossier-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        .character-dossier-card {
+            background: rgba(128, 128, 128, 0.1);
+            border: 1px solid var(--glass-border);
+            border-radius: 18px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .dossier-role-tag {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            padding: 4px 10px;
+            border-radius: 8px;
+            font-weight: 700;
+        }
+
+        .dossier-name {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--accent-color);
+        }
+
+        .dossier-relations {
+            font-size: 14px;
+            color: #38BDF8;
+            font-weight: 600;
+            line-height: 1.35;
+        }
+
+        .dossier-quote {
+            font-size: 14px;
+            opacity: 0.9;
+            line-height: 1.45;
+            font-style: italic;
+            background: rgba(0,0,0,0.22);
+            padding: 10px 12px;
+            border-radius: 12px;
+            border-left: 3px solid var(--accent-color);
+        }
+
+        /* ГОЛОСА ОЗВУЧКИ */
+        .voice-personas-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .persona-chip {
+            padding: 10px 8px;
+            border-radius: 12px;
+            border: 1px solid var(--glass-border);
+            background: rgba(128, 128, 128, 0.1);
+            color: var(--text-color);
+            font-size: 14px;
+            text-align: center;
+            cursor: pointer;
+            line-height: 1.3;
+        }
+
+        .persona-chip small {
+            display: block;
+            font-size: 11.5px;
+            opacity: 0.7;
+            margin-top: 3px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .persona-chip.active {
+            border-color: var(--accent-color);
+            background: var(--accent-glow);
+            color: var(--accent-color);
+            font-weight: 700;
+        }
+
+        /* ВСПЛЫВАЮЩИЙ ОНЛАЙН-ПЕРЕВОДЧИК (КРУПНЫЙ ШРИФТ) */
+        .translator-popover {
+            position: fixed;
+            bottom: 42px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: calc(100% - 24px);
+            max-width: 520px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(28px);
+            border: 1.5px solid var(--accent-color);
+            border-radius: 22px;
+            padding: 16px 18px;
+            z-index: 92;
+            box-shadow: 0 24px 60px rgba(0,0,0,0.8);
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .translator-popover.open { display: flex; }
+
+        .trans-source-word {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--accent-color);
+            max-width: 48%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .trans-lang-select {
+            background: rgba(0,0,0,0.45);
+            color: var(--text-color);
+            border: 1px solid var(--glass-border);
+            border-radius: 10px;
+            padding: 7px 10px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .trans-result-box {
+            font-size: 17px;
+            font-weight: 600;
+            line-height: 1.45;
+            padding: 12px 14px;
+            border-radius: 12px;
+            background: rgba(128, 128, 128, 0.12);
+        }
+
+        /* 4 ВИДА 3D КНИЖНЫХ ПОЛОК */
+        .shelf-cabinet {
+            border-radius: 18px;
+            padding: 22px 16px 12px 16px;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+
+        .shelf-cabinet[data-shelf="oak"] {
+            background: linear-gradient(180deg, #2D1B10 0%, #1B0F08 100%);
+            border: 3px solid #4A2E1B;
+            --plank-top: #5E3A22;
+            --plank-front: linear-gradient(90deg, #3D2313 0%, #684228 50%, #3D2313 100%);
+            --plank-border: #1A0E07;
+        }
+
+        .shelf-cabinet[data-shelf="nordic"] {
+            background: linear-gradient(180deg, #E6D7C3 0%, #D5C2A8 100%);
+            border: 3px solid #C4AD8F;
+            --plank-top: #D9C3A5;
+            --plank-front: linear-gradient(90deg, #B89F7D 0%, #D4BE9E 50%, #B89F7D 100%);
+            --plank-border: #8C7355;
+        }
+
+        .shelf-cabinet[data-shelf="walnut"] {
+            background: linear-gradient(180deg, #181412 0%, #0D0A09 100%);
+            border: 3px solid #2E2522;
+            --plank-top: #332925;
+            --plank-front: linear-gradient(90deg, #1F1815 0%, #3B2F2A 50%, #1F1815 100%);
+            --plank-border: #090706;
+        }
+
+        .shelf-cabinet[data-shelf="cyber"] {
+            background: linear-gradient(180deg, rgba(12, 19, 34, 0.95) 0%, rgba(7, 11, 20, 0.98) 100%);
+            border: 2px solid rgba(56, 189, 248, 0.35);
+            --plank-top: rgba(56, 189, 248, 0.22);
+            --plank-front: linear-gradient(90deg, rgba(14, 116, 144, 0.65) 0%, rgba(56, 189, 248, 0.85) 50%, rgba(14, 116, 144, 0.65) 100%);
+            --plank-border: rgba(56, 189, 248, 0.5);
+        }
+
+        .wood-shelf-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+            gap: 20px;
+            padding: 10px 14px 0 14px;
+            margin-bottom: 34px;
+            position: relative;
+            border-bottom: 18px solid var(--plank-top);
+            box-shadow: 0 14px 20px rgba(0,0,0,0.6);
+        }
+
+        .wood-shelf-row::after {
+            content: '';
+            position: absolute;
+            bottom: -18px;
+            left: -14px;
+            right: -14px;
+            height: 18px;
+            background: var(--plank-front);
+            border-top: 1px solid rgba(255, 255, 255, 0.24);
+            border-bottom: 2px solid var(--plank-border);
+        }
+
+        .book-3d-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            cursor: pointer;
+            perspective: 800px;
+            padding-bottom: 2px;
+        }
+
+        .book-cover-art {
+            width: 102px;
+            height: 148px;
+            border-radius: 3px 7px 7px 3px;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 10px 9px 10px 14px;
+            color: #FFF;
+            background-size: cover;
+            background-position: center;
+            transform: rotateY(-12deg);
+            transition: transform 0.3s ease;
+            box-shadow: -6px 6px 14px rgba(0,0,0,0.75), inset 4px 0 8px rgba(255,255,255,0.28);
+        }
+
+        .book-3d-card:hover .book-cover-art {
+            transform: rotateY(0deg) translateY(-8px) scale(1.05);
+        }
+
+        .book-cover-art::before {
+            content: '';
+            position: absolute;
+            top: 0; bottom: 0; left: 0; width: 9px;
+            background: linear-gradient(90deg, rgba(0,0,0,0.55) 0%, rgba(255,255,255,0.18) 65%, rgba(0,0,0,0.35) 100%);
+            z-index: 2;
+        }
+
+        .book-cover-art::after {
+            content: '';
+            position: absolute;
+            top: 3px; bottom: 3px; right: -6px; width: 6px;
+            background: repeating-linear-gradient(90deg, #F5EFE6 0px, #D8CEBE 1px, #F5EFE6 2px);
+            border-radius: 0 3px 3px 0;
+        }
+
+        .cover-overlay {
+            position: absolute; inset: 0;
+            background: linear-gradient(180deg, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0.78) 100%);
+            z-index: 1;
+        }
+
+        .cover-badge, .cover-title, .cover-author { position: relative; z-index: 3; }
+        .cover-badge { font-size: 9px; text-transform: uppercase; background: rgba(0,0,0,0.65); padding: 3px 6px; border-radius: 4px; align-self: flex-start; }
+        .cover-title { font-family: 'Literata', serif; font-size: 12px; font-weight: 700; line-height: 1.22; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+        .cover-author { font-size: 10px; opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        /* 3D-КАРТОЧКИ СЛОВ (FLASHCARDS) */
+        .flashcard-stage { perspective: 1000px; width: 100%; height: 195px; margin: 12px 0 16px 0; cursor: pointer; }
+        .flashcard-inner { width: 100%; height: 100%; position: relative; transition: transform 0.55s ease; transform-style: preserve-3d; }
+        .flashcard-inner.flipped { transform: rotateY(180deg); }
+        .flashcard-face {
+            position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden;
+            border-radius: 20px; padding: 20px; display: flex; flex-direction: column; justify-content: space-between;
+            align-items: center; text-align: center; border: 1.5px solid var(--accent-color);
+            background: linear-gradient(145deg, rgba(30, 41, 59, 0.92) 0%, rgba(15, 23, 42, 0.98) 100%);
+        }
+        .flashcard-back { transform: rotateY(180deg); border-color: #34D399; background: linear-gradient(145deg, rgba(6, 78, 59, 0.88) 0%, rgba(15, 23, 42, 0.98) 100%); }
+        .fc-word-main { font-size: 25px; font-weight: 700; color: #FFF; }
+        .fc-word-sub { font-size: 13px; opacity: 0.75; }
+
+        .quote-card {
+            padding: 12px 14px; border-radius: 14px; background: rgba(128, 128, 128, 0.1);
+            border-left: 4px solid var(--accent-color); font-size: 14.5px; line-height: 1.48; margin-bottom: 10px; cursor: pointer;
+        }
+
+        .comic-viewer-container { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+        .comic-page-card { width: 100%; border-radius: 12px; overflow: hidden; background: #000; position: relative; }
+        .comic-page-card img { width: 100%; max-height: calc(100vh - 70px); object-fit: contain; display: block; margin: 0 auto; }
+
+        .toast-msg {
+            position: fixed; bottom: 45px; left: 50%; transform: translateX(-50%) translateY(20px);
+            background: #10B981; color: #052E16; font-weight: 700; font-size: 14px; padding: 10px 18px;
+            border-radius: 22px; opacity: 0; pointer-events: none; transition: all 0.25s ease; z-index: 995;
+            box-shadow: 0 12px 28px rgba(0,0,0,0.5);
+        }
+        .toast-msg.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+        #fileInput { display: none; }
+
+        /* Android 10: безопасные поля экрана, большие зоны касания, доступная прокрутка модальных окон */
+        html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+        body { overscroll-behavior-x: none; }
+        .reader-stage {
+            height: calc(100vh - 30px - env(safe-area-inset-bottom));
+            height: calc(100dvh - 30px - env(safe-area-inset-bottom));
+            padding-top: max(14px, env(safe-area-inset-top));
+            padding-left: max(var(--side-margin), env(safe-area-inset-left));
+            padding-right: max(var(--side-margin), env(safe-area-inset-right));
+            touch-action: pan-y;
+        }
+        .book-content { overflow-wrap: anywhere; hyphens: auto; -webkit-hyphens: auto; }
+        .book-content p { orphans: 2; widows: 2; }
+        .book-content p.continued-part { text-indent:0; }
+        .book-content.two-columns-active { column-fill: auto; }
+        .zen-margin-footer { bottom: env(safe-area-inset-bottom); height: 30px; padding: 0 max(12px, var(--side-margin)); gap: 5px; }
+        .zen-progress-line { bottom: calc(30px + env(safe-area-inset-bottom)); }
+        #readerMenuButton { font: 600 12px Inter, sans-serif; min-height: 28px; padding: 3px 12px; border:1px solid var(--glass-border); border-radius: 10px; color: var(--text-color); background: var(--glass-bg); cursor:pointer; white-space: nowrap; }
+        .drawer-overlay { padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
+        .modal-card { max-height: min(94vh, 94dvh); overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+        .window-controls { flex-shrink: 0; }
+        .window-title-text { min-width:0; font-size: clamp(15px, 4vw, 19px); }
+        button, input, select { touch-action: manipulation; }
+        .mindmap-scope-control { background:rgba(128,128,128,.08); border:1px solid var(--glass-border); border-radius:12px; padding:10px 12px; font-size:13px; margin-bottom:12px; line-height:1.45; }
+        .mindmap-actions { display:flex; flex-wrap:wrap; gap:8px; margin:9px 0; }
+        .mindmap-actions .tts-ctrl-btn { flex: 1 1 130px; font-size:12.5px; padding: 9px; }
+        .no-spoilers-label { display:flex; gap:8px; align-items:center; cursor:pointer; }
+        .no-spoilers-label input { width:18px; height:18px; accent-color:var(--accent-color); }
+        .reading-stats-label { font-size:13px; opacity:.78; margin-bottom:10px; line-height:1.5; }
+        .nlm-leaf-node span, .nlm-root-box span, .nlm-branch-header > div { overflow-wrap:anywhere; min-width:0; }
+        .nlm-leaf-node { flex-wrap:wrap; }
+        .nlm-leaf-node .tts-ctrl-btn { margin-left:auto; }
+        @media (max-width: 520px) {
+            .reader-stage { max-width: 100%; padding-top: max(12px, env(safe-area-inset-top)); }
+            .modal-card { padding: 14px; border-radius: 16px; max-height: 96dvh; }
+            .window-titlebar { gap:4px; }
+            .window-controls { gap:4px; }
+            .win-btn { width:34px; height:38px; min-width:34px; }
+            .tts-ctrl-btn { min-height: 42px; }
+            .hub-grid { gap:8px; }
+            .hub-tile-btn { padding:12px 6px; min-height:82px; }
+            .hub-tile-label { font-size:13px; }
+            .hub-tile-icon { font-size:23px; }
+            .hub-tile-sub { font-size:11px; }
+            .segmented-control.cols-3, .segmented-control.cols-4 { grid-template-columns:repeat(2,minmax(0,1fr)); }
+            .persona-chip { font-size:12px; padding:11px 5px; min-width:0; }
+            .persona-chip small { font-size:10px; }
+            .setting-label { flex-wrap:wrap; gap:6px; }
+            .nlm-branch-list { padding-left:8px; }
+            .nlm-branch-card { padding:12px 9px; }
+            .nlm-children-wrap { padding-left:6px; }
+            .nlm-root-box { padding:10px; gap:8px; }
+            .translator-popover { bottom:calc(40px + env(safe-area-inset-bottom)); padding:11px; }
+            .trans-lang-select { max-width:115px; }
+            .zen-margin-footer { font-size: 10px; }
+        }
+        @media (max-width: 350px) {
+            .hub-tile-sub { display: none; }
+            .zen-margin-footer { padding:0 8px; }
+            .zen-margin-footer #footerPageCounter { max-width:46%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+            #readerMenuButton { padding:3px 6px; }
+        }
+        #pageMeasurer { overflow-wrap: anywhere; hyphens:auto; -webkit-hyphens:auto; }
+        #pageMeasurer p.section-divider { text-indent:0; font-weight:700; color:var(--accent-color); font-size:1.16em; margin-top:.6em; margin-bottom:.6em; text-align:left; }
+        #pageMeasurer p.digest-card-block { text-indent:0; background:rgba(128,128,128,.08); border:1px solid var(--glass-border); border-left:4px solid var(--accent-color); padding:12px 15px; border-radius:14px; margin-bottom:12px; text-align:left; }
+        @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration:.01ms!important; animation-duration:.01ms!important; scroll-behavior:auto!important; } }
+
+    </style>
+</head>
+<body class="paged-mode-body">
+
+    <!-- Ночной диммер яркости -->
+    <div class="screen-dimmer-overlay" id="screenDimmer"></div>
+
+    <!-- Индикатор жеста яркости по левому краю -->
+    <div class="brightness-hud-pill" id="brightnessHudPill">
+        <span>☀️</span>
+        <div class="brightness-bar-track">
+            <div class="brightness-bar-fill" id="brightnessBarFill"></div>
+        </div>
+        <span id="brightnessPctLabel" style="font-size:12px; font-weight:700;">100%</span>
+    </div>
+
+    <!-- Золотая физическая закладка-ляссе (двойной тап в правом верхнем углу) -->
+    <div class="ribbon-bookmark" id="ribbonBookmark" title="Золотая закладка-ляссе" onclick="toggleRibbonBookmark()"></div>
+
+    <!-- Световое кольцо «Пульс Света» (появляется при удержании 0.35 сек) -->
+    <div class="pulse-light-ring" id="pulseLightRing"></div>
+
+    <!-- Скрытый измеритель для точной постраничной верстки -->
+    <div id="pageMeasurer"></div>
+
+    <!-- ЧИСТЫЙ КНИЖНЫЙ ЛИСТ (100% ТОЛЬКО ТЕКСТ) -->
+    <main class="reader-stage" id="readerStage">
+        <article class="book-content" id="bookContent"></article>
+    </main>
+
+    <!-- ТОНКАЯ МИКРО-СТРОКА НА НИЖНЕМ ПОЛЕ СТРАНИЦЫ -->
+    <div class="zen-progress-line" id="progressBar"></div>
+    <footer class="zen-margin-footer" id="zenMarginFooter">
+        <span id="footerClock">12:00</span>
+        <button type="button" id="readerMenuButton" onclick="openWindow('controlHubModal')" aria-label="Открыть меню читалки">☰ Меню</button>
+        <span id="footerPageCounter" onclick="openWindow('controlHubModal')" style="cursor:pointer;">Стр. 1 из 1 • 0%</span>
+    </footer>
+
+    <!-- Док свернутых окон -->
+    <div class="minimized-dock" id="minimizedDock"></div>
+
+    <div class="toast-msg" id="toastMsg">✨ Готово</div>
+    <input type="file" id="fileInput" accept=".epub,.fb2,.cbz,.txt,.pdf,.docx,.rtf,.md,.html,.zip" onchange="handleFileUpload(event)">
+
+    <!-- ВСПЛЫВАЮЩИЙ ОНЛАЙН-ПЕРЕВОДЧИК СЛОВ -->
+    <div class="translator-popover" id="translatorPopover" onclick="event.stopPropagation()">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+            <span class="trans-source-word" id="transSourceText">Слово</span>
+            <div style="display:flex; gap:6px; align-items:center;">
+                <select class="trans-lang-select" id="targetLangSelect" onchange="retranslateCurrentSelection()">
+                    <option value="ru">🇷🇺 Русский</option>
+                    <option value="uk">🇺🇦 Українська</option>
+                    <option value="en">🇬🇧 English</option>
+                    <option value="es">🇪🇸 Español</option>
+                    <option value="de">🇩🇪 Deutsch</option>
+                    <option value="fr">🇫🇷 Français</option>
+                    <option value="pl">🇵🇱 Polski</option>
+                    <option value="tr">🇹🇷 Türkçe</option>
+                </select>
+                <button class="tts-ctrl-btn" style="padding:7px 11px;" onclick="speakTranslatedWord()">🔊</button>
+                <button class="tts-ctrl-btn primary" style="padding:7px 12px;" onclick="saveTranslationToFlashcards()">🃏 В карточки</button>
+                <button class="win-btn close-win" onclick="closeTranslatorPopover()">✕</button>
+            </div>
+        </div>
+        <div class="trans-result-box" id="transTargetText">Переводим онлайн...</div>
+        <div style="font-size:13px; opacity:0.8;" id="transDictDetails"></div>
+    </div>
+
+    <!-- =====================================================================
+         ЕДИНЫЙ ЦЕНТР УПРАВЛЕНИЯ («ПУЛЬС СВЕТА» — УДЕРЖАНИЕ ПАЛЬЦА 0.35 СЕК)
+         ===================================================================== -->
+    <div class="drawer-overlay" id="controlHubModal" data-title="✨ Меню" onclick="closeModals(event)">
+        <div class="modal-card" onclick="event.stopPropagation()">
+            <div class="window-titlebar">
+                <div class="window-title-text">✨ Центр Управления Чтением</div>
+                <div class="window-controls">
+                    <button class="win-btn close-win" title="Вернуться к книге" onclick="closeWindow('controlHubModal')">✕</button>
+                </div>
+            </div>
+
+            <div class="hub-book-header">
+                <div class="hub-book-title" id="hubBookTitle">Хроники Горизонта</div>
+                <div class="hub-book-meta" id="hubBookProgressLabel">Страница 1 из 5 • Прогресс 20%</div>
+                <input type="range" min="1" max="1" step="1" value="1" class="ai-slider" id="hubPageSlider" oninput="onHubPageSliderInput(this.value)">
+            </div>
+
+            <div id="readingStatsLabel" class="reading-stats-label">📖 Продолжайте чтение с последнего места</div>
+            <div class="hub-grid">
+                <div class="hub-tile-btn" onclick="switchHubToWindow('distillerModal')">
+                    <span class="hub-tile-icon">✨</span>
+                    <span class="hub-tile-label" id="hubDistillTileLabel">Краткий текст (100%)</span>
+                    <span class="hub-tile-sub">Сжатие и Саммари</span>
+                </div>
+                <div class="hub-tile-btn" onclick="switchHubToWindow('libraryModal'); renderWoodenShelf();">
+                    <span class="hub-tile-icon">📚</span>
+                    <span class="hub-tile-label">3D-Полка книг</span>
+                    <span class="hub-tile-sub">Загрузить файл</span>
+                </div>
+                <div class="hub-tile-btn" onclick="closeWindow('controlHubModal'); openKnowledgeGraph();">
+                    <span class="hub-tile-icon">🧠</span>
+                    <span class="hub-tile-label">MindMap & Герои</span>
+                    <span class="hub-tile-sub">Дерево смыслов</span>
+                </div>
+                <div class="hub-tile-btn" onclick="switchHubToWindow('ttsModal')">
+                    <span class="hub-tile-icon">🔊</span>
+                    <span class="hub-tile-label">Озвучка (6 профилей)</span>
+                    <span class="hub-tile-sub">Настраиваемые голоса Android</span>
+                </div>
+                <div class="hub-tile-btn" onclick="switchHubToWindow('settingsModal')">
+                    <span class="hub-tile-icon">⚙️</span>
+                    <span class="hub-tile-label">Настройки вида</span>
+                    <span class="hub-tile-sub">Шрифт, Тема, Экраны</span>
+                </div>
+                <div class="hub-tile-btn" onclick="closeWindow('controlHubModal'); openInsightsModal();">
+                    <span class="hub-tile-icon">🃏</span>
+                    <span class="hub-tile-label">Карточки и Цитаты</span>
+                    <span class="hub-tile-sub">Закладки и Словарь</span>
+                </div>
+                <div class="hub-tile-btn" onclick="switchHubToWindow('searchModal')">
+                    <span class="hub-tile-icon">🔍</span>
+                    <span class="hub-tile-label">Поиск по тексту</span>
+                    <span class="hub-tile-sub">Найти фразу</span>
+                </div>
+                <div class="hub-tile-btn" onclick="switchHubToWindow('prompterModal')">
+                    <span class="hub-tile-icon">📜</span>
+                    <span class="hub-tile-label">Телесуфлер</span>
+                    <span class="hub-tile-sub">Автопрокрутка</span>
+                </div>
+                <div class="hub-tile-btn" onclick="exportBookDigestFile('md')">
+                    <span class="hub-tile-icon">📥</span>
+                    <span class="hub-tile-label">Скачать конспект</span>
+                    <span class="hub-tile-sub">Экспорт в .MD / .TXT</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- =====================================================================
+         ОКНО 1: ИИ-ДИСТИЛЛЯТОР И МНОГОСТРАНИЧНЫЙ КОНСПЕКТ КНИГИ + ЭКСПОРТ
+         ===================================================================== -->
+    <div class="drawer-overlay" id="distillerModal" data-title="✨ Конспект" onclick="closeModals(event)">
+        <div class="modal-card" onclick="event.stopPropagation()">
+            <div class="window-titlebar">
+                <div class="window-title-text">✨ Локальное сокращение и конспект</div>
+                <div class="window-controls">
+                    <button class="win-btn" title="Свернуть" onclick="minimizeWindow('distillerModal')">—</button>
+                    <button class="win-btn" title="Во весь экран" onclick="toggleMaximizeWindow('distillerModal')">⛶</button>
+                    <button class="win-btn close-win" title="Закрыть" onclick="closeWindow('distillerModal')">✕</button>
+                </div>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <span style="font-size:16px;">Активный уровень: <b style="color:var(--accent-color);" id="modeTitle">Оригинал (100%)</b></span>
+                <span id="timeSavedBadge" style="font-size:14px; color:#34D399; font-weight:700;">Полный текст</span>
+            </div>
+
+            <input type="range" min="0" max="3" step="1" value="0" class="ai-slider" id="compressionSlider" oninput="setSliderLevel(parseInt(this.value, 10))">
+
+            <div class="distiller-cards-grid">
+                <div class="distill-option-card active" id="distillCard0" onclick="setSliderLevel(0)">
+                    <div class="distill-opt-title">100% — Оригинал книги</div>
+                    <div class="distill-opt-desc">Полный авторский текст без единого сокращения.</div>
+                </div>
+                <div class="distill-option-card" id="distillCard1" onclick="setSliderLevel(1)">
+                    <div class="distill-opt-title">70% — Чистый поток</div>
+                    <div class="distill-opt-desc">Убрана только явная «вода» и длинные отступления. Все диалоги и сюжет сохранены.</div>
+                </div>
+                <div class="distill-option-card" id="distillCard2" onclick="setSliderLevel(2)">
+                    <div class="distill-opt-title">40% — Концентрат сути</div>
+                    <div class="distill-opt-desc">Сжатие в 2.5 раза: только ключевые действия героев, главные аргументы и важные сцены.</div>
+                </div>
+                <div class="distill-option-card" id="distillCard3" onclick="setSliderLevel(3)">
+                    <div class="distill-opt-title">10% — Полный Конспект Книги</div>
+                    <div class="distill-opt-desc">Многостраничный разбор КАЖДОЙ главы и раздела от начала до конца + Паспорт книги и Выводы.</div>
+                </div>
+            </div>
+
+            <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:6px;">
+                <button class="tts-ctrl-btn" style="flex:1;" onclick="exportBookDigestFile('md')">📥 Скачать конспект (.MD)</button>
+                <button class="tts-ctrl-btn" style="flex:1;" onclick="exportBookDigestFile('txt')">📥 Скачать конспект (.TXT)</button>
+                <button class="tts-ctrl-btn primary" style="width:100%;" onclick="closeWindow('distillerModal')">📖 Читать выбранный режим</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- =====================================================================
+         ОКНО 2: NOTEBOOKLM MINDMAP И СТРОГОЕ ДОСЬЕ ПЕРСОНАЖЕЙ
+         ===================================================================== -->
+    <div class="drawer-overlay" id="graphModal" data-title="🧠 MindMap & Герои" onclick="closeModals(event)">
+        <div class="modal-card" onclick="event.stopPropagation()">
+            <div class="window-titlebar">
+                <div class="window-title-text">🧠 Структурная MindMap и Досье Героев</div>
+                <div class="window-controls">
+                    <button class="win-btn" title="Свернуть" onclick="minimizeWindow('graphModal')">—</button>
+                    <button class="win-btn" title="Во весь экран" onclick="toggleMaximizeWindow('graphModal')">⛶</button>
+                    <button class="win-btn close-win" title="Закрыть" onclick="closeWindow('graphModal')">✕</button>
+                </div>
+            </div>
+
+            <div class="segmented-control" style="margin-bottom: 14px;">
+                <button class="segment-btn active" id="btnTabMindmap" onclick="switchKnowledgeView('mindmap')">🧠 MindMap (По главам)</button>
+                <button class="segment-btn" id="btnTabCharacters" onclick="switchKnowledgeView('characters')">👥 Досье Персонажей</button>
+            </div>
+
+            <div id="nlmMindmapView">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:8px; flex-wrap:wrap;">
+                    <span style="font-size:14px; opacity:0.85;">Карта строится из основного текста без титульных страниц и оглавления.</span>
+                    <div style="display:flex; gap:8px;">
+                        <button class="tts-ctrl-btn" style="padding:7px 12px; font-size:13px;" onclick="toggleAllMindmapBranches(true)">Развернуть все</button>
+                        <button class="tts-ctrl-btn" style="padding:7px 12px; font-size:13px;" onclick="toggleAllMindmapBranches(false)">Свернуть</button>
+                        <button class="tts-ctrl-btn primary" style="padding:7px 12px; font-size:13px;" onclick="exportBookDigestFile('md')">📥 В файл</button>
+                    </div>
+                </div>
+                <div class="mindmap-scope-control">
+                    <span id="analysisStartLabel">Начало основного текста: определяем…</span>
+                    <div class="mindmap-actions">
+                        <button class="tts-ctrl-btn" onclick="setAnalysisStartFromCurrentPage()" title="На странице книги откройте первую страницу повествования, затем нажмите эту кнопку">📍 С текущей страницы</button>
+                        <button class="tts-ctrl-btn" onclick="resetAnalysisStart()">↺ Автоопределение</button>
+                    </div>
+                    <label class="no-spoilers-label"><input id="mindmapNoSpoilers" type="checkbox" onchange="buildNotebookLmMindmap()"> Только уже прочитанные главы (без спойлеров)</label>
+                </div>
+                <div class="notebooklm-tree-container" id="nlmTreeContainer"></div>
+            </div>
+
+            <div id="nlmCharactersView" style="display:none;">
+                <div style="font-size:14px; opacity:0.85; margin-bottom:10px;">
+                    Действующие лица, выделенные по диалогам, поступкам и совместным сценам:
+                </div>
+                <div class="dossier-grid" id="characterDossierContainer"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- =====================================================================
+         ОКНО 3: НАСТРОЙКИ ЧИТАЛКИ (КРУПНЫЙ ШРИФТ, РЕЖИМ ЛИСТАНИЯ, КОЛОНКИ)
+         ===================================================================== -->
+    <div class="drawer-overlay" id="settingsModal" data-title="⚙️ Настройки" onclick="closeModals(event)">
+        <div class="modal-card" onclick="event.stopPropagation()">
+            <div class="window-titlebar">
+                <div class="window-title-text">⚙️ Настройки Чтения и Экрана</div>
+                <div class="window-controls">
+                    <button class="win-btn" title="Свернуть" onclick="minimizeWindow('settingsModal')">—</button>
+                    <button class="win-btn" title="Во весь экран" onclick="toggleMaximizeWindow('settingsModal')">⛶</button>
+                    <button class="win-btn close-win" title="Закрыть" onclick="closeWindow('settingsModal')">✕</button>
+                </div>
+            </div>
+
+            <!-- Переключатель Постраничного листания тапами / Вертикальной ленты -->
+            <div class="setting-row">
+                <span class="setting-label"><span>📄 Режим перелистывания книги</span></span>
+                <div class="segmented-control">
+                    <button class="segment-btn active" id="modePagedBtn" onclick="setPaginationMode('paged')">📄 Постранично (Тапы / Свайпы)</button>
+                    <button class="segment-btn" id="modeScrollBtn" onclick="setPaginationMode('scroll')">📜 Бесконечная лента вниз</button>
+                </div>
+            </div>
+
+            <div class="setting-row">
+                <span class="setting-label"><span>📱 Ориентация и Колонки (Телефон / Планшет)</span></span>
+                <div class="segmented-control cols-3">
+                    <button class="segment-btn active" id="colBtnAuto" onclick="setColumnMode('auto', this)">🔄 Авто (2 в альбоме)</button>
+                    <button class="segment-btn" id="colBtn1" onclick="setColumnMode('1', this)">📱 1 колонка</button>
+                    <button class="segment-btn" id="colBtn2" onclick="setColumnMode('2', this)">📖 2 колонки (Разворот)</button>
+                </div>
+            </div>
+
+            <div class="setting-row">
+                <span class="setting-label"><span>🌙 Ночной диммер яркости (или свайп по левому краю)</span><b id="dimmerValLbl">0%</b></span>
+                <input type="range" min="0" max="75" step="5" value="0" class="ai-slider" id="dimmerRangeSlider" oninput="setScreenDimmer(this.value)">
+            </div>
+
+            <div class="setting-row">
+                <span class="setting-label"><span>🎨 Цветовая тема страницы</span></span>
+                <div class="segmented-control cols-4">
+                    <button class="segment-btn active" onclick="setTheme('dark', this)">Ночь</button>
+                    <button class="segment-btn" onclick="setTheme('sepia', this)">Пергамент</button>
+                    <button class="segment-btn" onclick="setTheme('light', this)">Бумага</button>
+                    <button class="segment-btn" onclick="setTheme('oled', this)">OLED Черный</button>
+                </div>
+            </div>
+
+            <div class="setting-row">
+                <span class="setting-label"><span>🔤 Размер шрифта книги</span><b id="fontSizeValLbl">20 px</b></span>
+                <input type="range" min="15" max="32" step="1" value="20" class="ai-slider" oninput="setCustomFontSize(this.value)">
+            </div>
+
+            <div class="setting-row">
+                <span class="setting-label"><span>↕️ Межстрочный интервал</span><b id="lineHeightValLbl">1.7</b></span>
+                <input type="range" min="1.25" max="2.2" step="0.05" value="1.68" class="ai-slider" oninput="setCustomLineHeight(this.value)">
+            </div>
+
+            <div class="setting-row">
+                <span class="setting-label"><span>↔️ Боковые поля страницы</span><b id="marginValLbl">24 px</b></span>
+                <input type="range" min="10" max="64" step="2" value="24" class="ai-slider" oninput="setCustomMargins(this.value)">
+            </div>
+
+            <div class="setting-row">
+                <span class="setting-label"><span>✒️ Гарнитура шрифта и Бионик-фокус</span></span>
+                <div class="segmented-control cols-4">
+                    <button class="segment-btn active" onclick="setFontFamily('Literata, Georgia, serif', this)">Literata</button>
+                    <button class="segment-btn" onclick="setFontFamily('Merriweather, serif', this)">Merriweather</button>
+                    <button class="segment-btn" onclick="setFontFamily('Inter, sans-serif', this)">Inter Sans</button>
+                    <button class="segment-btn" id="bionicToggleBtn" onclick="toggleBionicReading()">⚡ Бионик</button>
+                </div>
+            </div>
+
+            <div class="setting-row">
+                <span class="setting-label"><span>📐 Дополнительно</span></span>
+                <div class="segmented-control cols-4">
+                    <button class="segment-btn" id="alignJustifyBtn" onclick="toggleTextAlignment()">По левому краю</button>
+                    <button class="segment-btn" id="boldWeightBtn" onclick="toggleBoldWeight()">Жирный</button>
+                    <button class="segment-btn active" id="transToggleSettingBtn" onclick="toggleInstantTranslator()">🌐 Перевод: ВКЛ</button>
+                    <button class="segment-btn" id="fullscreenBtn" onclick="toggleAndroidFullscreen()">⛶ Полный экран</button>
+                </div>
+            </div>
+
+            <div class="setting-row" style="font-size:13px; opacity:.8; line-height:1.55;">
+                MindMap и краткие конспекты формируются локальным алгоритмом без передачи текста в облако. Это не генеративный ИИ; сверяйте тезисы с оригиналом книги.
+            </div>
+
+            <button class="tts-ctrl-btn primary" style="width:100%; padding:14px;" onclick="downloadCompleteApkZipBundle()">
+                📦 Скачать готовый ZIP-комплект v10 (PWA для Android)
+            </button>
+        </div>
+    </div>
+
+    <!-- =====================================================================
+         ОКНО 4: СТУДИЯ ОЗВУЧКИ (3 МУЖСКИХ И 3 ЖЕНСКИХ ГОЛОСА)
+         ===================================================================== -->
+    <div class="drawer-overlay" id="ttsModal" data-title="🔊 Озвучка" onclick="closeModals(event)">
+        <div class="modal-card" onclick="event.stopPropagation()">
+            <div class="window-titlebar">
+                <div class="window-title-text">🔊 Студия озвучки (6 профилей)</div>
+                <div class="window-controls">
+                    <button class="win-btn" title="Свернуть" onclick="minimizeWindow('ttsModal')">—</button>
+                    <button class="win-btn" title="Во весь экран" onclick="toggleMaximizeWindow('ttsModal')">⛶</button>
+                    <button class="win-btn close-win" title="Закрыть" onclick="closeWindow('ttsModal')">✕</button>
+                </div>
+            </div>
+
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;">
+                <button class="tts-ctrl-btn primary" style="flex:1;" id="ttsPlayPauseBtn" onclick="startOrPauseTts()">▶ Читать страницу вслух</button>
+                <button class="tts-ctrl-btn" onclick="previewCurrentVoice()">🎙️ Проба</button>
+                <button class="tts-ctrl-btn" id="ttsRateBtn" onclick="cycleTtsSpeed()">1.0x</button>
+                <button class="tts-ctrl-btn" onclick="stopTts()">⏹</button>
+            </div>
+
+            <div class="setting-label"><span>👨 3 мужских профиля:</span><span id="maleCountBadge" style="color:#38BDF8; font-size:13px;"></span></div>
+            <div class="voice-personas-grid">
+                <div class="persona-chip active" data-pidx="0" onclick="selectVoicePersona(0)">🧔 Дмитрий<small id="voiceSub0">Бас</small></div>
+                <div class="persona-chip" data-pidx="1" onclick="selectVoicePersona(1)">🎙️ Павел<small id="voiceSub1">Баритон</small></div>
+                <div class="persona-chip" data-pidx="2" onclick="selectVoicePersona(2)">⚡ Юрий<small id="voiceSub2">Тенор</small></div>
+            </div>
+
+            <div class="setting-label"><span>👩 3 женских профиля:</span></div>
+            <div class="voice-personas-grid">
+                <div class="persona-chip" data-pidx="3" onclick="selectVoicePersona(3)">🍷 Светлана<small id="voiceSub3">Альт</small></div>
+                <div class="persona-chip" data-pidx="4" onclick="selectVoicePersona(4)">👩 Дарья<small id="voiceSub4">Сопрано</small></div>
+                <div class="persona-chip" data-pidx="5" onclick="selectVoicePersona(5)">🌙 Ирина<small id="voiceSub5">Мягкий</small></div>
+            </div>
+
+            <div class="setting-row">
+                <span class="setting-label"><span>🔊 Громкость озвучки</span><b id="ttsVolLabel">100%</b></span>
+                <input type="range" min="0.05" max="1.0" step="0.05" value="1.0" class="ai-slider" id="ttsVolumeSlider" oninput="setMasterTtsVolume(this.value)">
+            </div>
+
+            <div class="setting-row">
+                <span class="setting-label"><span>🎚️ Глубина тембра / Бас</span><b id="ttsPitchLabel">0.94</b></span>
+                <input type="range" min="0.70" max="1.25" step="0.05" value="0.94" class="ai-slider" id="pitchFineSlider" oninput="onCustomPitchSlide(this.value)">
+            </div>
+
+            <div style="font-size:13px; opacity:.85; margin-bottom:10px; line-height:1.5;" id="voiceAvailabilityNote">Голоса предоставляет Android. Если голосов нужного пола нет, используются разные профили тембра одного доступного синтезатора; это не шесть отдельных актёрских голосов.</div>
+            <div style="font-size:13px; color:#34D399; margin-bottom:10px;" id="activeVoiceEngineLabel"></div>
+            <select id="systemVoiceSelect" class="voice-select" onchange="bindManualVoiceToCurrentSlot(this.value)">
+                <option value="">Закрепить конкретный синтезатор устройства за активной кнопкой...</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- =====================================================================
+         ОКНО 5: 3D-БИБЛИОТЕКА С 4 ВИДАМИ ПОЛОК
+         ===================================================================== -->
+    <div class="drawer-overlay" id="libraryModal" data-title="📚 Полка" onclick="closeModals(event)">
+        <div class="modal-card" onclick="event.stopPropagation()">
+            <div class="window-titlebar">
+                <div class="window-title-text">📚 Моя 3D-Библиотека</div>
+                <div class="window-controls">
+                    <button class="tts-ctrl-btn primary" style="padding:8px 14px; font-size:14px;" onclick="document.getElementById('fileInput').click()">+ Загрузить книгу</button>
+                    <button class="win-btn" title="Свернуть" onclick="minimizeWindow('libraryModal')">—</button>
+                    <button class="win-btn" title="Во весь экран" onclick="toggleMaximizeWindow('libraryModal')">⛶</button>
+                    <button class="win-btn close-win" title="Закрыть" onclick="closeWindow('libraryModal')">✕</button>
+                </div>
+            </div>
+
+            <div class="segmented-control cols-4" style="margin-bottom: 14px;">
+                <button class="segment-btn active" onclick="setShelfStyle('oak', this)">🪵 Дуб</button>
+                <button class="segment-btn" onclick="setShelfStyle('nordic', this)">🌲 Ясень</button>
+                <button class="segment-btn" onclick="setShelfStyle('walnut', this)">☕ Орех</button>
+                <button class="segment-btn" onclick="setShelfStyle('cyber', this)">💎 Стекло</button>
+            </div>
+
+            <div class="shelf-cabinet" id="woodenShelfContainer" data-shelf="oak"></div>
+        </div>
+    </div>
+
+    <!-- =====================================================================
+         ОКНО 6: ПОИСК ПО КНИГЕ
+         ===================================================================== -->
+    <div class="drawer-overlay" id="searchModal" data-title="🔍 Поиск" onclick="closeModals(event)">
+        <div class="modal-card" onclick="event.stopPropagation()">
+            <div class="window-titlebar">
+                <div class="window-title-text">🔍 Поиск и Переход по книге</div>
+                <div class="window-controls">
+                    <button class="win-btn" title="Свернуть" onclick="minimizeWindow('searchModal')">—</button>
+                    <button class="win-btn close-win" title="Закрыть" onclick="closeWindow('searchModal')">✕</button>
+                </div>
+            </div>
+
+            <div class="setting-row">
+                <span class="setting-label" id="jumpSliderLabel">Быстрый переход по страницам: 1</span>
+                <input type="range" min="1" max="1" value="1" class="ai-slider" id="bookJumpSlider" oninput="onHubPageSliderInput(this.value)">
+            </div>
+
+            <div class="setting-row">
+                <span class="setting-label">Поиск слова или фразы:</span>
+                <input type="text" id="bookSearchInput" class="api-input" placeholder="Введи слово для поиска..." oninput="performBookSearch(this.value)">
+            </div>
+
+            <div id="searchResultsList" style="max-height: 280px; overflow-y: auto;"></div>
+        </div>
+    </div>
+
+    <!-- =====================================================================
+         ОКНО 7: ТЕЛЕСУФЛЕР
+         ===================================================================== -->
+    <div class="drawer-overlay" id="prompterModal" data-title="📜 Суфлер" onclick="closeModals(event)">
+        <div class="modal-card" onclick="event.stopPropagation()">
+            <div class="window-titlebar">
+                <div class="window-title-text">📜 Автолистание и Телесуфлер</div>
+                <div class="window-controls">
+                    <button class="win-btn" title="Свернуть" onclick="minimizeWindow('prompterModal')">—</button>
+                    <button class="win-btn close-win" title="Закрыть" onclick="closeWindow('prompterModal')">✕</button>
+                </div>
+            </div>
+
+            <div class="setting-row">
+                <span class="setting-label"><span>🚀 Скорость чтения / автолистания</span><b id="prompterSpeedVal">3x</b></span>
+                <input type="range" min="1" max="10" step="0.5" value="3" class="ai-slider" oninput="setTeleprompterSpeed(this.value)">
+            </div>
+
+            <div class="setting-row">
+                <span class="setting-label"><span>🔊 Громкость звука</span><b id="masterVolumeVal">100%</b></span>
+                <input type="range" min="0.05" max="1.0" step="0.05" value="1.0" class="ai-slider" id="masterVolumeSlider" oninput="setMasterTtsVolume(this.value)">
+            </div>
+
+            <button class="tts-ctrl-btn primary" id="prompterToggleBtn" style="width:100%; padding:14px;" onclick="startOrPauseTeleprompter()">
+                ▶ Запустить авточтение без рук
+            </button>
+        </div>
+    </div>
+
+    <!-- =====================================================================
+         ОКНО 8: 3D-КАРТОЧКИ СЛОВ (FLASHCARDS) И ЗАКЛАДКИ
+         ===================================================================== -->
+    <div class="drawer-overlay" id="insightsModal" data-title="🃏 Карточки" onclick="closeModals(event)">
+        <div class="modal-card" onclick="event.stopPropagation()">
+            <div class="window-titlebar">
+                <div class="window-title-text">🃏 Карточки Слов и Закладки</div>
+                <div class="window-controls">
+                    <button class="win-btn" title="Свернуть" onclick="minimizeWindow('insightsModal')">—</button>
+                    <button class="win-btn close-win" title="Закрыть" onclick="closeWindow('insightsModal')">✕</button>
+                </div>
+            </div>
+
+            <div class="segmented-control" style="margin-bottom: 14px;">
+                <button class="segment-btn active" id="tabFlashcardsBtn" onclick="switchInsightsTab('flashcards')">🃏 Карточки слов</button>
+                <button class="segment-btn" id="tabQuotesBtn" onclick="switchInsightsTab('quotes')">📌 Закладки и Цитаты</button>
+            </div>
+
+            <div id="flashcardsSection">
+                <div style="display:flex; justify-content:space-between; font-size:14px; margin-bottom:6px;">
+                    <span id="fcCounterLabel">Карточка 1 из 4</span>
+                    <span id="fcLearnedLabel" style="color:#34D399; font-weight:700;">Выучено: 0</span>
+                </div>
+
+                <div class="flashcard-stage" onclick="flipCurrentFlashcard()">
+                    <div class="flashcard-inner" id="flashcardInner">
+                        <div class="flashcard-face">
+                            <span class="fc-word-sub" id="fcBookSource">Из книги</span>
+                            <div class="fc-word-main" id="fcFrontWord">Resilience</div>
+                            <div style="display:flex; gap:10px; align-items:center;">
+                                <button class="tts-ctrl-btn" onclick="event.stopPropagation(); speakFlashcardWord()">🔊 Озвучить</button>
+                                <span class="fc-word-sub">Нажми для перевода 🔄</span>
+                            </div>
+                        </div>
+                        <div class="flashcard-face flashcard-back">
+                            <span class="fc-word-sub">Перевод</span>
+                            <div class="fc-word-main" id="fcBackTranslation" style="color:#34D399;">Устойчивость / Сила духа</div>
+                            <span class="fc-word-sub" id="fcContextHint">Отметь статус ниже</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display:flex; gap:8px;">
+                    <button class="tts-ctrl-btn" onclick="stepFlashcard(-1)">⬅</button>
+                    <button class="tts-ctrl-btn" style="flex:1; color:#F87171;" onclick="markFlashcardStatus(false)">🔄 Повторить</button>
+                    <button class="tts-ctrl-btn primary" style="flex:1;" onclick="markFlashcardStatus(true)">✅ Знаю!</button>
+                    <button class="tts-ctrl-btn" onclick="stepFlashcard(1)">➡</button>
+                </div>
+            </div>
+
+            <div id="quotesSection" style="display:none;">
+                <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                    <button class="tts-ctrl-btn primary" style="flex: 1;" onclick="toggleRibbonBookmark()">📌 Повесить закладку-ляссе</button>
+                    <button class="tts-ctrl-btn" style="flex: 1;" onclick="exportQuotesToClipboard()">📋 Скопировать цитаты</button>
+                </div>
+                <div id="savedQuotesList" style="max-height: 260px; overflow-y: auto;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function setupPdfWorker() {
+            if (window.pdfjsLib) window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+        setupPdfWorker();
+        window.addEventListener('load',setupPdfWorker);
+
+        // =========================================================================
+        // 1. ВСТРОЕННАЯ БИБЛИОТЕКА И ХРАНИЛИЩЕ INDEXEDDB
+        // =========================================================================
+        const INITIAL_LIBRARY = [
+            {
+                id: "demo_scifi",
+                title: "Хроники Горизонта",
+                author: "А. Вейн",
+                genre: "fiction",
+                badge: "Фантастика",
+                coverGradient: "linear-gradient(135deg, #1E3A8A 0%, #7C2D12 100%)",
+                coverUrl: null,
+                isComic: false,
+                levels: {
+                    0: [
+                        "Глава 1. Сигнал из мертвой зоны",
+                        "Орбитальная станция «Элизиум-9» медленно поворачивалась вокруг своей оси, отбрасывая длинную холодную тень на кольца Сатурна. Командор Маркус Вейн стоял у обзорного купола, наблюдая за ледяными кристаллами.",
+                        "Вчера в полночь автоматический зонд перехватил радиопередачу из закрытого сектора. Маркус сразу понял, что сигнал идет с корабля «Прометей», которым командовал капитан Артур Росс сорок лет назад.",
+                        "Дверь шлюза открылась, и в рубку вошла доктор Елена Росс, главный ксенолингвист станции. Маркус повернулся к Елене и активировал голографическую консоль.\n— Ты вызвал меня посреди ночи, Маркус. Что случилось?\n— Послушай это, Елена, — тихо ответил Маркус. — Это голос твоего отца Артура. Он выжил на Титане и передает нам координаты.",
+                        "Глава 2. Семейный шифр и выбор",
+                        "Елена подошла к терминалу и затаила дыхание. Внутри сигнала бедствия Артур спрятал квантовый контейнер, зашифрованный семейным кодом «Зеркало», который Елена и Артур придумали много лет назад.",
+                        "Неожиданно на связь вышел адмирал Викториус Кроу из Совета Федерации. Кроу потребовал от Маркуса и Елены немедленно уничтожить запись и заблокировать ангар.",
+                        "— Через два часа сюда прибудет крейсер зачистки, который ведет адмирал Кроу, — жестко сказал Маркус, глядя на Елену. — Либо мы с тобой угоняем исследовательский челнок прямо сейчас, либо Кроу сотрет память об Артуре навсегда."
+                    ]
+                }
+            },
+            {
+                id: "demo_edu",
+                title: "Архитектура Мышления",
+                author: "Д. Канеман",
+                genre: "nonfiction",
+                badge: "Нон-фикшн",
+                coverGradient: "linear-gradient(135deg, #065F46 0%, #0F172A 100%)",
+                coverUrl: null,
+                isComic: false,
+                levels: {
+                    0: [
+                        "Глава 1. Когнитивная нагрузка и память",
+                        "Рабочая память человека способна удерживать лишь четыре смысловых блока одновременно. Когда мы переключаем внимание между мессенджером и сложной задачей, префронтальная кора тратит до сорока процентов нейронных ресурсов на перестройку контекста.",
+                        "Глава 2. Два режима работы мозга",
+                        "Нейробиология выделяет Фокусированный режим для аналитики и Дефолт-систему мозга для креативного синтеза. Дефолт-система активируется только в моменты тишины и отдыха без цифровых экранов.",
+                        "Глава 3. Дофаминовая ловушка суеты",
+                        "Быстрые уведомления создают иллюзию продуктивности: мозг получает дешевый дофамин за мелкие ответы в чатах и избегает глубокой двухчасовой концентрации над главным проектом.",
+                        "Глава 4. Протокол Интервального Фокуса",
+                        "Первые девяносто минут утра должны проходить в полной изоляции от входящей информации. После глубокого блока обязательна двадцатиминутная прогулка для консолидации памяти и построения устойчивых ментальных моделей."
+                    ]
+                }
+            }
+        ];
+
+        let libraryBooks = [...INITIAL_LIBRARY];
+        let currentBook = libraryBooks[0];
+        let currentLevelIndex = 0;
+
+        // Постраничный движок
+        let paginationMode = 'paged'; // 'paged' | 'scroll'
+        let paginatedPages = [[]];    // Массив страниц, каждая страница — массив объектов { text, pIdx, isHeading, isDigest }
+        let currentPageIndex = 0;
+        let columnMode = 'auto';      // 'auto' | '1' | '2'
+        let bookmarkedPagesMap = JSON.parse(localStorage.getItem('lumen_ribbon_pages') || '{}');
+
+        // Настройки чтения
+        let isBionicEnabled = false;
+        let isInstantTranslateEnabled = true;
+        let currentDimmerPct = 0;
+
+        let savedItems = JSON.parse(localStorage.getItem('lumen_saved_items') || '[]');
+        let totalSavedMinutes = parseInt(localStorage.getItem('lumen_saved_minutes') || '0', 10);
+
+        const LEVEL_META = [
+            { badge: "100%", title: "Оригинал (100%)", savedRatio: 0 },
+            { badge: "70%", title: "Чистый поток (70%)", savedRatio: 0.3 },
+            { badge: "40%", title: "Концентрат сути (40%)", savedRatio: 0.6 },
+            { badge: "10%", title: "Полный Конспект Книги (10%)", savedRatio: 0.88 }
+        ];
+
+        // =========================================================================
+        // 2. УМНЫЙ ПОСТРАНИЧНЫЙ ДВИЖОК (БЕЗ ОБРЕЗАННЫХ СТРОК ВНИЗУ)
+        // =========================================================================
+        function isTwoColumnsActive() {
+            if (currentBook && currentBook.isComic) return false;
+            // Две колонки на узком экране Android создают обрезание и нечитаемо узкие строки.
+            return window.innerWidth >= 820 && (columnMode === '2' || columnMode === 'auto');
+        }
+
+        // Разбиваем длинный абзац на фрагменты, каждый из которых помещается на экране.
+        function paginateBookParagraphs(paragraphs) {
+            if (!paragraphs || !paragraphs.length) { paginatedPages = [[]]; currentPageIndex = 0; return; }
+            if (currentBook.isComic && currentBook.comicPages) {
+                paginatedPages = currentBook.comicPages.map((src, idx) => [{ isComicImg:true, src, pIdx:idx }]);
+                currentPageIndex = Math.min(currentPageIndex, paginatedPages.length - 1);
+                return;
+            }
+            const stage = document.getElementById('readerStage');
+            const measurer = document.getElementById('pageMeasurer');
+            const twoCols = isTwoColumnsActive();
+            stage.classList.toggle('wide-tablet-stage', twoCols);
+            const stageStyle = getComputedStyle(stage);
+            const availableH = Math.max(135, stage.clientHeight - parseFloat(stageStyle.paddingTop) - parseFloat(stageStyle.paddingBottom) - 10);
+            const width = Math.max(140, stage.clientWidth - parseFloat(stageStyle.paddingLeft) - parseFloat(stageStyle.paddingRight));
+            const colWidth = twoCols ? (width - 48) / 2 : width;
+            const maxPageBudget = availableH * (twoCols ? 1.75 : 0.97);
+            measurer.style.width = Math.floor(colWidth) + 'px';
+            measurer.innerHTML = '';
+            const measureP = document.createElement('p');
+            measurer.appendChild(measureP);
+            const measure = (txt, heading, digest) => {
+                measureP.className = digest ? 'digest-card-block' : (heading ? 'section-divider' : '');
+                measureP.style.whiteSpace = 'pre-line';
+                measureP.textContent = txt;
+                return measureP.getBoundingClientRect().height + parseFloat(getComputedStyle(measureP).marginBottom || 0) + 4;
+            };
+            const items = [];
+            paragraphs.forEach((value, idx) => {
+                const rawText = String(value ?? '');
+                const isHeading = rawText.length < 95 && (/^(глава|часть|раздел|пролог|эпилог|этап|паспорт|итог|chapter|part|[📘📑🎯📌💬🏁💡🧭👥🔑])/i.test(rawText.trim()) || (rawText.length > 2 && rawText === rawText.toUpperCase()));
+                const isDigest = currentLevelIndex === 3 && rawText.includes('\n');
+                const fullHeight = measure(rawText, isHeading, isDigest);
+                if (fullHeight <= availableH * .98) {
+                    items.push({text:rawText, pIdx:idx, isHeading, isDigest, continued:false, height:fullHeight});
+                    return;
+                }
+                const words = rawText.match(/\S+\s*/g) || [rawText];
+                let pos = 0;
+                while (pos < words.length) {
+                    let lo = pos + 1, hi = words.length, end = lo;
+                    while (lo <= hi) {
+                        const mid = (lo + hi) >> 1;
+                        const txt = words.slice(pos, mid).join('').trim();
+                        if (measure(txt, isHeading && pos === 0, isDigest) <= availableH * 0.98 || mid === pos + 1) {
+                            end = mid; lo = mid + 1;
+                        } else hi = mid - 1;
+                    }
+                    let part = words.slice(pos, end).join('').trim();
+                    // Не допускаем пустых абзацев из-за пробельных строк.
+                    if (part) items.push({text:part, pIdx:idx, isHeading:isHeading && pos === 0, isDigest, continued:pos>0, height:measure(part,isHeading && pos === 0,isDigest)});
+                    pos = end;
+                }
+            });
+            const pages=[]; let bucket=[], budget=0;
+            for (const originalItem of items) {
+                let item=originalItem;
+                // Заголовки не оставляем сиротами внизу страницы.
+                if (item.isHeading && budget > maxPageBudget*.78 && bucket.length) {
+                    pages.push(bucket); bucket=[]; budget=0;
+                }
+                while (bucket.length && budget + item.height > maxPageBudget) {
+                    const remaining=maxPageBudget-budget;
+                    // Плотно заполняем страницу частью длинного абзаца, но только
+                    // когда поместится не меньше двух строк текста.
+                    if (!item.isHeading && !item.isDigest && remaining > 95) {
+                        const words=item.text.match(/\S+\s*/g)||[];
+                        let lo=1, hi=words.length-1, best=0;
+                        while(lo<=hi){
+                            const mid=(lo+hi)>>1;
+                            if(measure(words.slice(0,mid).join('').trim(),false,false)<=remaining-4){best=mid;lo=mid+1;}
+                            else hi=mid-1;
+                        }
+                        if(best>2 && best<words.length){
+                            const first=words.slice(0,best).join('').trim();
+                            const rest=words.slice(best).join('').trim();
+                            const firstItem={...item,text:first,height:measure(first,false,false)};
+                            bucket.push(firstItem);
+                            pages.push(bucket);bucket=[];budget=0;
+                            item={...item,text:rest,height:measure(rest,false,false),isHeading:false,continued:true};
+                            continue;
+                        }
+                    }
+                    pages.push(bucket);bucket=[];budget=0;
+                }
+                bucket.push(item);budget+=item.height;
+            }
+            if (bucket.length) pages.push(bucket);
+            measurer.replaceChildren();
+            paginatedPages = pages.length ? pages : [[]];
+            currentPageIndex = Math.max(0, Math.min(currentPageIndex, paginatedPages.length - 1));
+        }
+
+
+                let activeRenderToken = 0;
+        function renderActivePage(animateTurn = false) {
+            const token = ++activeRenderToken;
+            const contentEl = document.getElementById('bookContent');
+            const twoCols = isTwoColumnsActive();
+            contentEl.classList.toggle('two-columns-active', twoCols && paginationMode === 'paged');
+
+            if (animateTurn) {
+                contentEl.classList.add('page-turning');
+            }
+
+            setTimeout(() => {
+                if (token !== activeRenderToken) return;
+                if (paginationMode === 'scroll') {
+                    // Бесконечная вертикальная лента
+                    const allParas = currentBook.levels[currentLevelIndex] || [];
+                    contentEl.innerHTML = allParas.map((p, idx) => {
+                        const isHeading = p.length < 95 && (/^(глава|часть|раздел|пролог|эпилог|[📘📑🎯📌💬🏁])/i.test(p));
+                        const isDigest = currentLevelIndex === 3 && p.includes('\n');
+                        return `<p class="${isDigest ? 'digest-card-block' : (isHeading ? 'section-divider' : '')}" data-pidx="${idx}">${formatBionicParagraph(p)}</p>`;
+                    }).join('');
+                } else {
+                    // Чистая экранная страница
+                    const pageItems = paginatedPages[currentPageIndex] || [];
+                    if (pageItems.length > 0 && pageItems[0].isComicImg) {
+                        contentEl.innerHTML = `
+                            <div class="comic-viewer-container">
+                                <div class="comic-page-card">
+                                    <img src="${escapeHtml(pageItems[0].src)}" alt="Страница комикса">
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        contentEl.innerHTML = pageItems.map((item) => `
+                            <p class="${item.isDigest ? 'digest-card-block' : (item.isHeading ? 'section-divider' : (item.continued ? 'continued-part' : ''))}" data-pidx="${item.pIdx}">${formatBionicParagraph(item.text)}</p>
+                        `).join('');
+                    }
+                }
+
+                // Двойной тап по абзацу сохраняет его в цитаты
+                contentEl.querySelectorAll('p').forEach(pNode => {
+                    pNode.addEventListener('dblclick', (e) => {
+                        e.stopPropagation();
+                        const pIdx = parseInt(pNode.getAttribute('data-pidx') || '0', 10);
+                        const rawP = (currentBook.levels[currentLevelIndex] || [])[pIdx] || pNode.innerText;
+                        saveQuoteFromParagraph(rawP, pNode);
+                    });
+                });
+
+                contentEl.classList.remove('page-turning');
+                updatePageFooterAndRibbon();
+                if (paginationMode === 'paged') saveReadingPosition();
+            }, animateTurn ? 90 : 0);
+        }
+
+        function turnPage(delta) {
+            if (paginationMode === 'scroll') {
+                window.scrollBy({ top: delta * window.innerHeight * 0.82, behavior: 'smooth' });
+                return;
+            }
+            const nextIdx = currentPageIndex + delta;
+            if (nextIdx >= 0 && nextIdx < paginatedPages.length) {
+                currentPageIndex = nextIdx;
+                saveReadingPosition();
+                if (navigator.vibrate) navigator.vibrate(8);
+                renderActivePage(true);
+                if (isTtsPlaying) {
+                    const firstPIdx = paginatedPages[currentPageIndex][0]?.pIdx || 0;
+                    speakParagraphAt(firstPIdx);
+                }
+            } else if (nextIdx >= paginatedPages.length) {
+                showToast("📖 Конец книги");
+            }
+        }
+
+        function jumpToParagraphPage(targetParaIdx) {
+            closeAllModals();
+            if (paginationMode === 'scroll') {
+                const el = document.querySelector(`#bookContent p[data-pidx="${targetParaIdx}"]`);
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
+            const foundPage = paginatedPages.findIndex(page => page.some(item => item.pIdx >= targetParaIdx));
+            if (foundPage !== -1) {
+                currentPageIndex = foundPage;
+                saveReadingPosition();
+                renderActivePage(true);
+            }
+        }
+
+        function updatePageFooterAndRibbon() {
+            const total = Math.max(1, paginatedPages.length);
+            const cur = Math.min(total, currentPageIndex + 1);
+            const pct = total > 1 ? Math.round(((cur - 1) / (total - 1)) * 100) : 100;
+
+            document.getElementById('progressBar').style.width = pct + '%';
+            const modeTag = currentLevelIndex > 0 ? ` • ИИ ${LEVEL_META[currentLevelIndex].badge}` : '';
+            document.getElementById('footerPageCounter').textContent = `Стр. ${cur} из ${total} • ${pct}%${modeTag}`;
+
+            // Обновляем слайдеры в Хабе и Поиске
+            const hubSlider = document.getElementById('hubPageSlider');
+            const searchSlider = document.getElementById('bookJumpSlider');
+            if (hubSlider) { hubSlider.max = total; hubSlider.value = cur; }
+            if (searchSlider) { searchSlider.max = total; searchSlider.value = cur; }
+
+            document.getElementById('hubBookTitle').textContent = currentBook.title;
+            document.getElementById('hubBookProgressLabel').textContent = `Страница ${cur} из ${total} • Прогресс ${pct}% • ${currentBook.author}`;
+            document.getElementById('jumpSliderLabel').textContent = `Быстрый переход: Страница ${cur} из ${total}`;
+
+            // Проверяем, висит ли золотая закладка-ляссе на этой странице
+            const key = `${currentBook.id}_${currentPageIndex}`;
+            document.getElementById('ribbonBookmark').classList.toggle('active', !!bookmarkedPagesMap[key]);
+        }
+
+        function onHubPageSliderInput(val) {
+            currentPageIndex = Math.max(0, Math.min(paginatedPages.length-1, parseInt(val, 10) - 1));
+            saveReadingPosition();
+            renderActivePage(false);
+        }
+
+        // Позиция и привычка читать: сохраняются только на устройстве.
+        const POSITION_KEY = 'lumen_v10_book_positions';
+        function getStoredPositions() { try { return JSON.parse(localStorage.getItem(POSITION_KEY) || '{}'); } catch { return {}; } }
+        function saveReadingPosition() {
+            if (!currentBook || !paginatedPages.length || currentLevelIndex !== 0) return;
+            const locations = getStoredPositions();
+            const pIdx = paginatedPages[currentPageIndex]?.[0]?.pIdx ?? 0;
+            locations[currentBook.id] = {paragraph:pIdx, date:Date.now()};
+            try { localStorage.setItem(POSITION_KEY, JSON.stringify(locations)); } catch {}
+        }
+        function restoreReadingPosition() {
+            const pos = getStoredPositions()[currentBook.id];
+            if (!pos || !Number.isFinite(pos.paragraph)) return false;
+            const idx=paginatedPages.findIndex(page => page.some(x => x.pIdx >= pos.paragraph));
+            if (idx>=0) currentPageIndex=idx;
+            return idx>=0;
+        }
+        const dayKey=()=>new Date().toLocaleDateString('sv-SE');
+        let currentReadingDay = dayKey();
+        let readingSeconds = Number(localStorage.getItem('lumen_minutes_'+currentReadingDay)||0);
+        let lastReadingActivity = Date.now();
+        function markReadingActivity() { lastReadingActivity = Date.now(); }
+        function updateReadingStats() {
+            const d = dayKey();
+            if (d !== currentReadingDay) {currentReadingDay=d;readingSeconds=Number(localStorage.getItem('lumen_minutes_'+d)||0);}
+            if (!document.hidden && Date.now()-lastReadingActivity < 60000) {readingSeconds += 15;localStorage.setItem('lumen_minutes_'+d, String(readingSeconds));}
+            const mins = Math.floor(readingSeconds / 60);
+            document.getElementById('readingStatsLabel').textContent = `📖 Сегодня: ${mins} мин активного чтения • 10 минут в день — хорошая цель`;
+        }
+        document.addEventListener('pointerdown', markReadingActivity, {passive:true});
+        document.addEventListener('keydown', markReadingActivity);
+        setInterval(updateReadingStats,15000);
+        window.addEventListener('pagehide', saveReadingPosition);
+        window.addEventListener('scroll', () => {
+            if (paginationMode !== 'scroll' || !currentBook) return;
+            clearTimeout(window._scrollProgressTimer);
+            window._scrollProgressTimer = setTimeout(() => {
+                const topPara = Array.from(document.querySelectorAll('#bookContent p')).find(p => p.getBoundingClientRect().bottom > 100);
+                if (!topPara) return;
+                const idx = +topPara.dataset.pidx;
+                const page = paginatedPages.findIndex(items => items.some(x => x.pIdx >= idx));
+                if (page !== -1) { currentPageIndex = page; updatePageFooterAndRibbon(); saveReadingPosition(); }
+            }, 200);
+        }, {passive:true});
+
+        function setPaginationMode(mode) {
+            paginationMode = mode;
+            document.body.classList.toggle('paged-mode-body', mode === 'paged');
+            document.body.classList.toggle('scroll-mode-body', mode === 'scroll');
+            document.getElementById('modePagedBtn').classList.toggle('active', mode === 'paged');
+            document.getElementById('modeScrollBtn').classList.toggle('active', mode === 'scroll');
+            paginateBookParagraphs(currentBook.levels[currentLevelIndex] || []);
+            renderActivePage(false);
+            if (mode === 'scroll') window.scrollTo({top: 0, behavior:'instant'});
+            showToast(mode === 'paged' ? "📄 Постраничное листание тапами" : "📜 Бесконечная вертикальная лента");
+        }
+
+        // =========================================================================
+        // 3. ОРИГИНАЛЬНЫЙ ВЫЗОВ МЕНЮ «ПУЛЬС СВЕТА» (0.35 СЕК) + ЖЕСТЫ ЯРКОСТИ И ТАПЫ
+        // =========================================================================
+        let holdTimer = null;
+        let pointerDownPos = null;
+        let isAdjustingBrightness = false;
+        let brightnessStartY = 0;
+        let brightnessStartDimmer = 0;
+        let lastTopRightTapTime = 0;
+
+        function initStageGestures() {
+            const stage = document.getElementById('readerStage');
+            const ring = document.getElementById('pulseLightRing');
+
+            stage.addEventListener('pointerdown', (e) => {
+                if (e.button && e.button !== 0) return;
+                pointerDownPos = { x: e.clientX, y: e.clientY, time: Date.now() };
+
+                // Если палец коснулся самого левого края (x < 42px) — готовим жест регулировки яркости
+                if (e.clientX < 42) {
+                    isAdjustingBrightness = false;
+                    brightnessStartY = e.clientY;
+                    brightnessStartDimmer = currentDimmerPct;
+                    return;
+                }
+
+                // Запускаем зарядку кольца «Пульс Света» при удержании в центре или верхней части экрана
+                const inCenterOrTop = e.clientX > window.innerWidth * 0.18 && e.clientX < window.innerWidth * 0.82 && e.clientY < window.innerHeight * 0.85;
+                if (inCenterOrTop) {
+                    ring.style.left = e.clientX + 'px';
+                    ring.style.top = e.clientY + 'px';
+                    ring.classList.add('charging');
+
+                    holdTimer = setTimeout(() => {
+                        ring.classList.remove('charging');
+                        if (navigator.vibrate) navigator.vibrate([20, 30, 15]);
+                        pointerDownPos = null;
+                        openWindow('controlHubModal');
+                    }, 350);
+                }
+            });
+
+            stage.addEventListener('pointermove', (e) => {
+                if (!pointerDownPos) return;
+                const dx = e.clientX - pointerDownPos.x;
+                const dy = e.clientY - pointerDownPos.y;
+
+                // Жест яркости вдоль левого края экрана
+                if (pointerDownPos.x < 42 && Math.abs(dy) > 14) {
+                    clearTimeout(holdTimer);
+                    isAdjustingBrightness = true;
+                    const deltaPct = Math.round((dy / (window.innerHeight * 0.55)) * 75);
+                    const nextDimmer = Math.max(0, Math.min(75, brightnessStartDimmer + deltaPct));
+                    setScreenDimmer(nextDimmer, true);
+                    return;
+                }
+
+                // Если палец сдвинулся больше чем на 14px — отменяем удержание «Пульс Света»
+                if (Math.hypot(dx, dy) > 14) {
+                    clearTimeout(holdTimer);
+                    ring.classList.remove('charging');
+                }
+            });
+
+            stage.addEventListener('pointerup', (e) => {
+                clearTimeout(holdTimer);
+                ring.classList.remove('charging');
+
+                if (isAdjustingBrightness) {
+                    isAdjustingBrightness = false;
+                    setTimeout(() => document.getElementById('brightnessHudPill').classList.remove('show'), 500);
+                    pointerDownPos = null;
+                    return;
+                }
+
+                if (!pointerDownPos) return;
+                const dx = e.clientX - pointerDownPos.x;
+                const dy = e.clientY - pointerDownPos.y;
+                const elapsed = Date.now() - pointerDownPos.time;
+                pointerDownPos = null;
+
+                // 1. Горизонтальный свайп влево/вправо — перелистывание страницы
+                if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+                    turnPage(dx < 0 ? 1 : -1);
+                    return;
+                }
+
+                // 2. Короткий тап (< 320 мс)
+                if (elapsed < 320 && Math.hypot(dx, dy) < 14) {
+                    // Проверка на двойной тап в правом верхнем углу -> Золотая закладка-ляссе
+                    if (e.clientX > window.innerWidth - 95 && e.clientY < 95) {
+                        const now = Date.now();
+                        if (now - lastTopRightTapTime < 420) {
+                            toggleRibbonBookmark();
+                            lastTopRightTapTime = 0;
+                            return;
+                        }
+                        lastTopRightTapTime = now;
+                    }
+
+                    // Тап по левому краю (первые 28% ширины экрана) -> Предыдущая страница
+                    if (e.clientX < window.innerWidth * 0.28) {
+                        closeTranslatorPopover();
+                        turnPage(-1);
+                        return;
+                    }
+
+                    // Тап по правому краю (последние 28% ширины экрана) -> Следующая страница
+                    if (e.clientX > window.innerWidth * 0.72) {
+                        closeTranslatorPopover();
+                        turnPage(1);
+                        return;
+                    }
+
+                    // Тап по слову в центральной зоне -> Онлайн-перевод слова
+                    if (isInstantTranslateEnabled && e.target.tagName === 'P') {
+                        const word = extractClickedWord(e);
+                        if (word && word.length >= 2) {
+                            triggerOnlineTranslation(word);
+                            return;
+                        }
+                    }
+                    closeTranslatorPopover();
+                }
+            });
+
+            // Клавиши стрелок и пробела для перелистывания
+            window.addEventListener('keydown', (e) => {
+                if (document.querySelector('.drawer-overlay.open')) return;
+                if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
+                    e.preventDefault();
+                    turnPage(1);
+                } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+                    e.preventDefault();
+                    turnPage(-1);
+                }
+            });
+        }
+
+        function toggleRibbonBookmark() {
+            const key = `${currentBook.id}_${currentPageIndex}`;
+            if (bookmarkedPagesMap[key]) {
+                delete bookmarkedPagesMap[key];
+                showToast("Закладка-ляссе снята со страницы");
+            } else {
+                bookmarkedPagesMap[key] = true;
+                if (navigator.vibrate) navigator.vibrate([15, 35, 15]);
+                addBookmarkHere();
+            }
+            localStorage.setItem('lumen_ribbon_pages', JSON.stringify(bookmarkedPagesMap));
+            updatePageFooterAndRibbon();
+        }
+
+        // =========================================================================
+        // 4. МНОГОСТРАНИЧНЫЙ КОНСПЕКТ НА 10% + ЭКСПОРТ В ФАЙЛ (.MD / .TXT)
+        // =========================================================================
+        const RU_STOP_WORDS = new Set([
+            "когда","чтобы","только","через","между","после","однако","также","которые","который","которая","которое","может","более","всего","будет","жизни","время","очень","просто","каждый","потому","всегда","именно","перед","около","почти","совсем","снова","вдруг","опять","здесь","теперь","потом","тогда","зачем","почему","какой","какая","какие","такой","такая","такие","своей","своего","своим","своими","этого","этому","этим","этих","всех","всем","всеми","него","неё","них","нами","вами","собой","себя","себе","быть","было","была","были","будут","стал","стала","стали","сказал","сказала","говорил","ответил","спросил","подумал","увидел","понял","знал","хотел","могла","могли","нужно","надо","нельзя","можно","глава","часть","раздел","книга","страница","внутри","снаружи","сверху","снизу","рядом","вокруг","против","вместе","вместо","словно","будто","точно","конечно","наверное","кажется","вообще","сразу","долго","быстро","медленно","тихо","громко","сильно","слабо","хорошо","плохо","вчера","сегодня","завтра","ночью","утром","вечером","первый","второй","третий","новый","старый","большой","маленький","последний","каждое","любой","многие","некоторые","человек","людей","люди","жизнь","работа","работы","слово","слова","место","места","образ","образом","случай","случае","вопрос","стороны","сторону","взгляд","голос","руки","руку","глаза","голову","дверь","комнату","стол","дом","дома","мира","мире","день","ночь","года","лет","раз","раза"
+        ]);
+
+        function buildWordFrequencyMap(paragraphs) {
+            const freq = {};
+            paragraphs.forEach(p => {
+                (p.toLowerCase().match(/[а-яёa-z]{5,}/g) || []).forEach(w => {
+                    if (!RU_STOP_WORDS.has(w)) freq[w] = (freq[w] || 0) + 1;
+                });
+            });
+            return freq;
+        }
+
+        function scoreSentenceImportance(sentence, wordFreqMap) {
+            let score = 0;
+            if (/(поэтому|однако|главн|важно|секрет|правил|метод|вывод|решени|проблем|оказалось|понял|открыл|приказал|потребовал|решил|значит|именно|должен|нужно|закон|принцип|суть|итог|цель)/i.test(sentence)) {
+                score += 18;
+            }
+            if (/(—|«|»|")/.test(sentence)) score += 10;
+            const words = sentence.toLowerCase().match(/[а-яёa-z]{5,}/g) || [];
+            words.forEach(w => { score += Math.min(6, (wordFreqMap[w] || 0)); });
+            return score / Math.max(4, words.length);
+        }
+
+        // Отделяем повествование от титула, рекламы, оглавления, издательских заметок.
+        // Автоопределение осторожное: ручной выбор всегда имеет приоритет.
+        const FRONT_HEADING_RE = /^(?:аннотац(?:ия|ии)|оглавление|содержание|contents|table of contents|copyright|копирайт|выходные данные|от издател[ья]|об авторе|об авторах|библиографи[яи]|благодарност[ьи]|предисловие|от редакции|about the author|about this book|publisher.s note|introduction by|title page|посвящение|отзывы(?: о книге)?|тизер|реклама|издательство)(?=$|[\s.:—-])/i;
+        const STORY_HEADING_RE = /^(?:глава\s*(?:\d+|[ivxlcdm]+|[а-яё]+)|chapter\s*\d+|часть\s*(?:\d+|[ivxlcdm]+|[а-яё]+)|part\s*(?:\d+|[ivxlcdm]+)|пролог|prologue|раздел\s*\d+|эпилог)(?=$|[\s.:—-])/i;
+        const FRONT_MARKER_RE = /\b(?:isbn(?:-1[03])?|удк|ббк|©|copyright|все права защищены|rights reserved|издател[ьс]|тираж|редактор|корректор|типограф|перевод с|обложк|isbn)\b/i;
+        // Точек-лидеров и явной нумерации страниц достаточно для определения оглавления.
+        // «Глава 1» без точек — настоящий заголовок, а не пункт оглавления.
+        const TOC_LINE_RE = /(?:\.{3,}|…{2,}|[-–—]\s*\d{1,4}$|[А-Яа-яЁёa-z]{3,}\s{2,}\d{1,4}$)/i;
+
+        function detectNarrativeStartIndex(paragraphs) {
+            if (!Array.isArray(paragraphs) || !paragraphs.length) return 0;
+            if (currentBook && Number.isFinite(currentBook.analysisStartIdx)) {
+                return Math.max(0, Math.min(paragraphs.length - 1, currentBook.analysisStartIdx));
+            }
+            const limit = Math.min(paragraphs.length, Math.max(35, Math.min(140, Math.ceil(paragraphs.length * .25))));
+            let frontSeen = false, lastFront = -1, storyCandidate = -1;
+            for (let i = 0; i < limit; i++) {
+                const t = String(paragraphs[i] || '').trim();
+                if (FRONT_HEADING_RE.test(t) || FRONT_MARKER_RE.test(t) || (i < 30 && TOC_LINE_RE.test(t) && t.length < 110)) {
+                    frontSeen = true; lastFront = i;
+                }
+                if (STORY_HEADING_RE.test(t) && !TOC_LINE_RE.test(t) && storyCandidate < 0) storyCandidate = i;
+            }
+            // Если книга явно начинается главой / прологом, не трогаем оригинал.
+            if (storyCandidate === 0) return 0;
+            if (storyCandidate > 0) {
+                const before = paragraphs.slice(0, storyCandidate);
+                const actualProseBefore = before.filter(t => String(t).length > 260 && !FRONT_MARKER_RE.test(t));
+                // Если перед главой был нормальный художественный текст — не удаляем его.
+                if (!frontSeen && actualProseBefore.length >= 2) return 0;
+                return storyCandidate;
+            }
+            if (frontSeen) {
+                // При отсутствии заголовков берём начало связного текста после последней
+                // обнаруженной библиографической / служебной страницы.
+                for (let i = lastFront + 1; i < Math.min(limit + 30, paragraphs.length); i++) {
+                    const t = String(paragraphs[i] || '').trim();
+                    if (FRONT_HEADING_RE.test(t) || FRONT_MARKER_RE.test(t) || TOC_LINE_RE.test(t) && t.length < 110) continue;
+                    if (t.length >= 130 && (String(paragraphs[i+1] || '').length > 80 || t.length > 300)) return i;
+                }
+            }
+            // Не выдумываем границу текста без убедительных признаков.
+            return 0;
+        }
+
+        function getNarrativeParagraphEntries(paragraphs, options = {}) {
+            const start = detectNarrativeStartIndex(paragraphs);
+            const limit = Number.isFinite(options.endIdx) ? Math.min(paragraphs.length, options.endIdx + 1) : paragraphs.length;
+            const entries = [];
+            for (let i = start; i < limit; i++) {
+                const text = String(paragraphs[i] ?? '').trim();
+                if (!text || FRONT_MARKER_RE.test(text) && text.length < 170) continue;
+                if (FRONT_HEADING_RE.test(text) && text.length < 95) continue;
+                entries.push({text, pIdx:i});
+            }
+            return entries;
+        }
+
+        // Сохраняем настоящие границы глав. Если их нет, строим достаточно крупные
+        // логические блоки, а не разрываем повествование каждые шесть абзацев.
+        function splitBookIntoLogicalSections(allParagraphs, options = {}) {
+            const entries = getNarrativeParagraphEntries(allParagraphs, options);
+            const hasHeadings = entries.some(x => STORY_HEADING_RE.test(x.text) && !TOC_LINE_RE.test(x.text) && x.text.length < 120);
+            const sections=[];
+            let sec = {title: 'Начало книги', startIdx:entries[0]?.pIdx ?? 0, paragraphs:[]};
+            function finish() { if (sec.paragraphs.length) sections.push(sec); }
+            entries.forEach((item, position) => {
+                const heading = item.text.length < 120 && STORY_HEADING_RE.test(item.text) && !TOC_LINE_RE.test(item.text);
+                if (heading) {
+                    finish();
+                    sec = {title:item.text, startIdx:item.pIdx, paragraphs:[]};
+                } else {
+                    sec.paragraphs.push(item);
+                    // Если явных заголовков нет, делим на 15 абзацев, а не на 6.
+                    // Внутри настоящих глав сохраняем авторское деление.
+                    if (!hasHeadings && sec.paragraphs.length >= 15 && position < entries.length - 1) {
+                        finish();
+                        sec = {title:`Фрагмент ${sections.length + 1}`, startIdx:item.pIdx + 1, paragraphs:[]};
+                    }
+                }
+            });
+            finish();
+            const freq = buildWordFrequencyMap(entries.map(x=>x.text));
+            sections.forEach((section, idx) => {
+                if (section.title === 'Начало книги' || /^Фрагмент \d+$/.test(section.title)) {
+                    const first = section.paragraphs[0]?.text || '';
+                    const title = (first.match(/[^.!?…]+[.!?…]/) || [first])[0].trim().split(/[,;—:]/)[0].slice(0, 65);
+                    section.title = `${hasHeadings ? 'Вступительный эпизод' : `Фрагмент ${idx+1}`}: ${title}${title.length >=65 ? '…':''}`;
+                }
+                const sentences=[];
+                section.paragraphs.forEach(item => {
+                    const parts=item.text.match(/[^.!?…]+[.!?…]+(?:\s|$)/g) || [item.text];
+                    parts.forEach(text => {const t=text.trim(); if(t.length>=24 && t.length<=500) sentences.push({text:t, pIdx:item.pIdx, score:scoreSentenceImportance(t,freq)}); });
+                });
+                const ranked=[...sentences].sort((a,b)=>b.score-a.score);
+                const seen=new Set();
+                const points=[];
+                for (const pt of ranked) {
+                    const hash=pt.text.toLowerCase().replace(/[^а-яёa-z0-9]/gi,'').slice(0,90);
+                    if(seen.has(hash))continue;
+                    points.push(pt);seen.add(hash);
+                    if(points.length===4)break;
+                }
+                section.keyPoints = points.sort((a,b)=>a.pIdx-b.pIdx);
+                // В художественной книге реплика сама по себе редко выражает смысл главы.
+                // Выбираем проверяемое предложение из авторского повествования.
+                const narrativeSentences = ranked.filter(x =>
+                    !/^[-—–«“"']/.test(x.text) &&
+                    !/(?:сказал|сказала|ответил|ответила|спросил|спросила|прошептал|произнес)/i.test(x.text) &&
+                    x.text.length >= 58
+                );
+                section.coreThesis = (narrativeSentences[0] || ranked[0])?.text || section.paragraphs[0]?.text || '';
+            });
+            return sections;
+        }
+
+                async function compressEntireBook(allParagraphs, levelIdx) {
+            const freqMap = buildWordFrequencyMap(allParagraphs);
+
+            if (levelIdx === 1) {
+                // 70% ЧИСТЫЙ ПОТОК: убираем только воду внутри длинных абзацев
+                return allParagraphs.map(p => {
+                    const sentences = p.match(/[^.!?]+[.!?]+(\s|$)/g) || [p];
+                    if (sentences.length <= 2 || p.includes('—')) return p;
+                    const scored = sentences.map((s, idx) => ({
+                        s: s.trim(), idx, score: (idx === 0 ? 5 : 0) + scoreSentenceImportance(s, freqMap)
+                    }));
+                    const keepCount = Math.max(1, Math.ceil(sentences.length * 0.72));
+                    return scored.sort((a, b) => b.score - a.score).slice(0, keepCount).sort((a, b) => a.idx - b.idx).map(x => x.s).join(' ');
+                }).filter(Boolean);
+            }
+
+            if (levelIdx === 2) {
+                // 40% КОНЦЕНТРАТ СУТИ
+                const concentrated = [];
+                for (let i = 0; i < allParagraphs.length; i += 2) {
+                    const pair = allParagraphs.slice(i, i + 2);
+                    const sents = [];
+                    pair.forEach(p => {
+                        if (p.length < 95 && /^(глава|часть|раздел)/i.test(p)) concentrated.push(p);
+                        else (p.match(/[^.!?]+[.!?]+(\s|$)/g) || [p]).forEach(s => sents.push(s.trim()));
+                    });
+                    if (sents.length > 0) {
+                        const scored = sents.map((s, idx) => ({ s, idx, score: scoreSentenceImportance(s, freqMap) }));
+                        const keep = Math.max(1, Math.ceil(sents.length * 0.45));
+                        concentrated.push(scored.sort((a, b) => b.score - a.score).slice(0, keep).sort((a, b) => a.idx - b.idx).map(x => x.s).join(' '));
+                    }
+                }
+                return concentrated;
+            }
+
+            // 10% — РАЗВЕРНУТЫЙ МНОГОСТРАНИЧНЫЙ КОНСПЕКТ ВСЕЙ КНИГИ ПО КАЖДОЙ ГЛАВЕ И РАЗДЕЛУ
+            const sections = splitBookIntoLogicalSections(allParagraphs);
+            const characters = extractSmartCharacters(allParagraphs);
+            const totalWords = allParagraphs.join(' ').split(/\s+/).length;
+            const digestParagraphs = [];
+
+            // 1. Паспорт книги
+            digestParagraphs.push(
+                `📘 ПОЛНЫЙ АНАЛИТИЧЕСКИЙ КОНСПЕКТ КНИГИ: «${currentBook.title.toUpperCase()}»\n` +
+                `Автор / Источник: ${currentBook.author}\n` +
+                `Структура: Разобрано разделов — ${sections.length} (исходный объем: ${allParagraphs.length} абз., ~${totalWords} слов).`
+            );
+
+            // 2. Подробный разбор КАЖДОГО раздела книги от начала до конца
+            sections.forEach((sec, idx) => {
+                digestParagraphs.push(`📑 ${sec.title.toUpperCase()}`);
+                digestParagraphs.push(`🎯 Главная мысль раздела:\n${sec.coreThesis}`);
+
+                if (sec.keyPoints.length > 1) {
+                    const bullets = sec.keyPoints.slice(1).map(pt => `• ${pt.text}`).join('\n');
+                    digestParagraphs.push(`📌 Ключевые тезисы, события и факты:\n${bullets}`);
+                }
+            });
+
+            // 3. Действующие лица (если они есть в книге)
+            if (characters.length > 0) {
+                const charBlock = characters.slice(0, 6).map(c =>
+                    `• ${c.name} (${c.role}) — ${c.relationsText}. Ключевая сцена: «${c.firstQuote.slice(0, 120)}…»`
+                ).join('\n');
+                digestParagraphs.push(`👥 ДОСЬЕ ДЕЙСТВУЮЩИХ ЛИЦ\n${charBlock}`);
+            }
+
+            // 4. Финальное резюме книги
+            const lastSec = sections[sections.length - 1];
+            if (lastSec) {
+                digestParagraphs.push(`🏁 ИТОГОВЫЕ ВЫВОДЫ И КУЛЬМИНАЦИЯ КНИГИ\n${lastSec.keyPoints.map(k => k.text).join(' ')}`);
+            }
+
+            return digestParagraphs;
+        }
+
+        // Скачивание готового конспекта книги, MindMap и цитат в файл (.MD или .TXT)
+        async function exportBookDigestFile(ext = 'md') {
+            showToast("📥 Формируем полный файл конспекта...");
+            if (!currentBook.levels[3]) {
+                currentBook.levels[3] = await compressEntireBook(currentBook.levels[0], 3);
+            }
+
+            const sections = splitBookIntoLogicalSections(currentBook.levels[0]);
+            const characters = extractSmartCharacters(currentBook.levels[0]);
+            const lines = [];
+
+            lines.push(`# 📘 Конспект книги: ${currentBook.title}`);
+            lines.push(`**Автор:** ${currentBook.author}`);
+            lines.push(`**Дата создания конспекта:** ${new Date().toLocaleDateString()}\n`);
+
+            lines.push(`---`);
+            lines.push(`## 🧠 1. Структурная карта идей (MindMap)\n`);
+            sections.forEach((sec) => {
+                lines.push(`### 📂 ${sec.title}`);
+                lines.push(`* **Главная суть:** ${sec.coreThesis}`);
+                sec.keyPoints.forEach(pt => {
+                    lines.push(`  - ${pt.text}`);
+                });
+                lines.push(``);
+            });
+
+            if (characters.length > 0) {
+                lines.push(`---`);
+                lines.push(`## 👥 2. Досье и роли персонажей\n`);
+                characters.forEach(c => {
+                    lines.push(`* **${c.name}** (${c.role}, сцен: ${c.mentions}) — ${c.relationsText}`);
+                    lines.push(`  > «${c.firstQuote}»\n`);
+                });
+            }
+
+            if (savedItems.length > 0) {
+                lines.push(`---`);
+                lines.push(`## 🔖 3. Сохраненные цитаты и закладки\n`);
+                savedItems.forEach(item => {
+                    lines.push(`* ${item.text} *(${item.time})*`);
+                });
+            }
+
+            const finalContent = lines.join('\n');
+            const mime = ext === 'md' ? 'text/markdown;charset=utf-8' : 'text/plain;charset=utf-8';
+            const blob = new Blob([finalContent], { type: mime });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `${currentBook.title.replace(/[^\wА-Яа-яЁё0-9_-]/g, '_')}_Конспект.${ext}`;
+            a.click();
+            showToast(`✅ Конспект скачан (.${ext.toUpperCase()})!`);
+        }
+
+        // =========================================================================
+        // 5. ЛОГИЧНАЯ MINDMAP (ПО РАЗДЕЛАМ) И СТРОГИЙ ДЕТЕКТОР ПЕРСОНАЖЕЙ БЕЗ МУСОРА
+        // =========================================================================
+        function normalizeEntityStem(word) {
+            return word.replace(/(ами|ями|ов|ев|ей|ам|ям|ом|ем|ах|ях|ую|юю|ого|его|ому|ему|ым|им|ой|ей|у|ю|а|я|е|и|ы)$/i, '');
+        }
+
+        // СТРОГИЙ ДЕТЕКТОР ПЕРСОНАЖЕЙ: отсекает обычные слова, наречия и абстрактные понятия
+        function extractSmartCharacters(paragraphs) {
+            const candidates = {};
+            const speechAndPersonVerbs = /(сказал|сказала|ответил|ответила|спросил|спросила|подумал|подумала|прошептал|прошептала|крикнул|крикнула|вошел|вошла|посмотрел|посмотрела|взглянул|увидел|увидела|понял|поняла|стоял|стояла|сидел|сидела|улыбнулся|улыбнулась|повернулся|повернулась|подошел|подошла|потребовал|потребовала|приказал|вызвал|заметил|заметила)/i;
+            const personTitles = /^(командор|доктор|капитан|адмирал|профессор|генерал|лейтенант|майор|полковник|мистер|миссис|мисс|леди|сэр|лорд|князь|граф|отец|мать|дядя|тетя)$/i;
+
+            const nonPersonBlacklist = new Set([
+                "глава","часть","раздел","книга","станция","корабль","сектор","совет","федерация","орден","замок","город","земля","солнце","сатурн","титан","прометей","элизиум","зеркало","память","система","режим","фокус","мозг","внимание","задача","проект","метод","принцип","закон","модель","информация","утро","ночь","день","вечер","время","жизнь","работа","история","правда","ответ","вопрос","голос","взгляд","мысль","смысл","результат","процесс","уровень","форма","часть","начало","конец"
+            ]);
+
+            getNarrativeParagraphEntries(paragraphs).forEach(({text:p, pIdx}) => {
+                const sentences = p.split(/[.!?…\n]+/);
+                sentences.forEach(sent => {
+                    const trimmedSent = sent.trim();
+                    if (!trimmedSent) return;
+
+                    const hasPersonVerb = speechAndPersonVerbs.test(trimmedSent);
+                    const isDialogueLine = trimmedSent.startsWith('—') || trimmedSent.includes('—');
+                    const tokens = trimmedSent.split(/\s+/);
+
+                    for (let i = 0; i < tokens.length; i++) {
+                        const rawTok = tokens[i];
+                        const clean = rawTok.replace(/[^А-ЯЁа-яёA-Za-z-]/g, '');
+                        if (!/^[А-ЯЁA-Z][а-яёa-z]{2,13}$/.test(clean)) continue;
+
+                        const lower = clean.toLowerCase();
+                        if (RU_STOP_WORDS.has(lower) || nonPersonBlacklist.has(lower)) continue;
+                        if (/(ать|ять|ить|еть|ться|лся|лась|лись|ющий|ающий|вший|ова|ева|ски|ому|ему|ыми|ими|ая|яя|ое|ее|ые|ие|ние|тие|ость|ение)$/i.test(lower)) continue;
+
+                        const prevClean = i > 0 ? tokens[i - 1].replace(/[^А-ЯЁа-яёA-Za-z-]/g, '') : '';
+                        const hasPrecedingTitle = personTitles.test(prevClean);
+                        const isVocativeInDialogue = isDialogueLine && (rawTok.endsWith(',') || rawTok.endsWith('!') || rawTok.endsWith('?'));
+                        const isMidSentence = i > 0;
+
+                        // Слово в начале предложения допускается ТОЛЬКО если в этом же предложении есть глагол человека или это уже известный герой
+                        const stem = normalizeEntityStem(clean).toLowerCase();
+                        if (stem.length < 3 || nonPersonBlacklist.has(stem)) continue;
+
+                        if (!isMidSentence && !hasPersonVerb && !candidates[stem]) continue;
+
+                        if (!candidates[stem]) {
+                            candidates[stem] = {
+                                name: clean,
+                                mentions: 0,
+                                personConfidence: 0,
+                                firstPara: pIdx,
+                                firstQuote: trimmedSent,
+                                paraSet: new Set()
+                            };
+                        }
+
+                        if (clean.length < candidates[stem].name.length && clean.length >= 3) {
+                            candidates[stem].name = clean;
+                        }
+
+                        candidates[stem].mentions++;
+                        candidates[stem].paraSet.add(pIdx);
+
+                        if (hasPrecedingTitle) candidates[stem].personConfidence += 5;
+                        if (hasPersonVerb) candidates[stem].personConfidence += 3;
+                        if (isVocativeInDialogue) candidates[stem].personConfidence += 4;
+                        if (isMidSentence) candidates[stem].personConfidence += 1;
+                    }
+                });
+            });
+
+            // Оставляем только тех кандидатов, которые доказали, что они живые персонажи (высокий personConfidence)
+            const verifiedHeroes = Object.values(candidates)
+                .filter(c => c.personConfidence >= 4)
+                .sort((a, b) => (b.personConfidence + b.mentions * 2) - (a.personConfidence + a.mentions * 2))
+                .slice(0, 8);
+
+            verifiedHeroes.forEach((hero, idx) => {
+                hero.role = idx === 0 ? "Главный герой" : (idx <= 2 ? "Ключевой персонаж" : "Действующее лицо");
+                const partners = [];
+                verifiedHeroes.forEach((other, oIdx) => {
+                    if (idx === oIdx) return;
+                    let shared = 0;
+                    hero.paraSet.forEach(pA => {
+                        if (other.paraSet.has(pA) || other.paraSet.has(pA - 1) || other.paraSet.has(pA + 1)) shared++;
+                    });
+                    if (shared > 0) partners.push(`${other.name} (${shared} сцен)`);
+                });
+                hero.relationsText = partners.length > 0
+                    ? `Сцены вместе с: ${partners.slice(0, 3).join(', ')}`
+                    : "Самостоятельная сюжетная линия";
+            });
+
+            return verifiedHeroes;
+        }
+
+        function openKnowledgeGraph() {
+            openWindow('graphModal');
+            buildNotebookLmMindmap();
+            buildCharacterDossiers();
+        }
+
+        function switchKnowledgeView(view) {
+            const isMm = view === 'mindmap';
+            document.getElementById('btnTabMindmap').classList.toggle('active', isMm);
+            document.getElementById('btnTabCharacters').classList.toggle('active', !isMm);
+            document.getElementById('nlmMindmapView').style.display = isMm ? 'block' : 'none';
+            document.getElementById('nlmCharactersView').style.display = isMm ? 'none' : 'block';
+        }
+
+        function setAnalysisStartFromCurrentPage() {
+            if (currentLevelIndex !== 0) {showToast('Переключитесь на оригинал (100%) и откройте начало повествования');return;}
+            const pIdx = paginatedPages[currentPageIndex]?.[0]?.pIdx ?? 0;
+            currentBook.analysisStartIdx = pIdx;
+            saveBookToDatabase(currentBook);
+            buildNotebookLmMindmap(); buildCharacterDossiers();
+            showToast(`Начало анализа: абзац ${pIdx + 1}`);
+        }
+        function resetAnalysisStart() {
+            delete currentBook.analysisStartIdx;
+            saveBookToDatabase(currentBook);
+            buildNotebookLmMindmap(); buildCharacterDossiers();
+            showToast('Вернули автоматическое определение начала текста');
+        }
+        function buildNotebookLmMindmap() {
+            const paragraphs = currentBook.levels[0] || [];
+            const start = detectNarrativeStartIndex(paragraphs);
+            const limit= document.getElementById('mindmapNoSpoilers')?.checked
+                ? (getStoredPositions()[currentBook.id]?.paragraph ?? paginatedPages[currentPageIndex]?.[0]?.pIdx ?? 0)
+                : undefined;
+            const sections = splitBookIntoLogicalSections(paragraphs, {endIdx:limit});
+            const scope = document.getElementById('analysisStartLabel');
+            if(scope) scope.textContent = `Начало основного текста: абзац ${start+1} из ${paragraphs.length}` +
+                (Number.isFinite(currentBook.analysisStartIdx) ? ' (выбрано вручную)' : ' (авто)') +
+                (start>0 ? ` • пропущено начальных абзацев: ${start}` : ' • вступительные страницы не обнаружены');
+            const html = sections.map(sec => {
+                const leaves = sec.keyPoints.map(pt => `
+                    <div class="nlm-leaf-node">
+                        <span>💡 ${escapeHtml(pt.text)}</span>
+                        <button class="tts-ctrl-btn" style="padding:6px 10px; font-size:13px; white-space:nowrap;" onclick="jumpToParagraphPage(${pt.pIdx})">📖 Перейти</button>
+                    </div>`).join('');
+                return `<div class="nlm-branch-card">
+                    <div class="nlm-branch-header" onclick="toggleNlmBranch(this)" role="button" tabindex="0">
+                        <div><div>📂 ${escapeHtml(sec.title)}</div>
+                        <div style="font-size:13.5px; color:var(--text-color); opacity:0.85; font-weight:500; margin-top:4px;">🎯 Тезис: ${escapeHtml(sec.coreThesis)}</div></div>
+                        <span class="nlm-expand-badge">− Свернуть</span>
+                    </div><div class="nlm-children-wrap">${leaves}</div></div>`;
+            }).join('');
+            document.getElementById('nlmTreeContainer').innerHTML = `
+                <div class="nlm-root-box"><span>📘 ${escapeHtml(currentBook.title)}</span>
+                <span style="font-size:13px; opacity:.85;">Глав / блоков: ${sections.length}</span></div>
+                ${sections.length ? `<div class="nlm-branch-list">${html}</div>`:
+                   `<div style="padding:18px;line-height:1.5">В выбранном диапазоне нет достаточно текста для карты. Отключите режим без спойлеров или выберите начало повествования вручную.</div>`}`;
+        }
+
+                function toggleNlmBranch(headerEl) {
+            const wrap = headerEl.nextElementSibling;
+            const badge = headerEl.querySelector('.nlm-expand-badge');
+            const isHidden = wrap.classList.toggle('nlm-children-hidden');
+            badge.textContent = isHidden ? '+ Раскрыть' : '− Свернуть';
+        }
+
+        function toggleAllMindmapBranches(expand) {
+            document.querySelectorAll('#nlmTreeContainer .nlm-children-wrap').forEach(w => {
+                w.classList.toggle('nlm-children-hidden', !expand);
+            });
+            document.querySelectorAll('#nlmTreeContainer .nlm-expand-badge').forEach(b => {
+                b.textContent = expand ? '− Свернуть' : '+ Раскрыть';
+            });
+        }
+
+        function buildCharacterDossiers() {
+            const paragraphs = currentBook.levels[0] || [];
+            const characters = extractSmartCharacters(paragraphs);
+            const container = document.getElementById('characterDossierContainer');
+
+            if (characters.length === 0) {
+                container.innerHTML = `
+                    <div style="grid-column: 1/-1; padding:22px; text-align:center; background:rgba(128,128,128,0.08); border-radius:16px; font-size:15px; line-height:1.5;">
+                        📚 <b>Это образовательная, научная или нон-фикшн книга без художественных персонажей.</b><br>
+                        Случайные слова исключены. Для изучения структуры идей этой книги переключись на вкладку <b>«🧠 MindMap»</b> выше!
+                    </div>
+                `;
+                return;
+            }
+
+            const roleColors = ["#E5A93C", "#38BDF8", "#34D399", "#A78BFA"];
+            container.innerHTML = characters.map((c, idx) => {
+                const col = roleColors[Math.min(idx, roleColors.length - 1)];
+                return `
+                    <div class="character-dossier-card">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span class="dossier-role-tag" style="background:${col}25; color:${col}; border:1px solid ${col}77;">${escapeHtml(c.role)}</span>
+                            <span style="font-size:13px; opacity:0.75;">Упоминаний: ${c.mentions}</span>
+                        </div>
+                        <div class="dossier-name">${escapeHtml(c.name)}</div>
+                        <div class="dossier-relations">🔗 ${escapeHtml(c.relationsText)}</div>
+                        <div class="dossier-quote">«${escapeHtml(c.firstQuote.slice(0, 180))}${c.firstQuote.length > 180 ? '…' : ''}»</div>
+                        <button class="tts-ctrl-btn" style="margin-top:auto;" onclick="jumpToParagraphPage(${c.firstPara})">📖 Перейти к сцене героя</button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // =========================================================================
+        // 6. УПРАВЛЕНИЕ ОКНАМИ, НАСТРОЙКАМИ И ОРИЕНТАЦИЕЙ ЭКРАНА
+        // =========================================================================
+        const minimizedWindows = new Map();
+
+        function openWindow(modalId) {
+            minimizedWindows.delete(modalId);
+            renderMinimizedDock();
+            updatePageFooterAndRibbon();
+            document.getElementById(modalId).classList.add('open');
+        }
+
+        function switchHubToWindow(targetModalId) {
+            closeWindow('controlHubModal');
+            openWindow(targetModalId);
+        }
+
+        function closeWindow(modalId) {
+            document.getElementById(modalId).classList.remove('open');
+            minimizedWindows.delete(modalId);
+            renderMinimizedDock();
+        }
+
+        function minimizeWindow(modalId) {
+            const overlay = document.getElementById(modalId);
+            const title = overlay.getAttribute('data-title') || 'Окно';
+            overlay.classList.remove('open');
+            minimizedWindows.set(modalId, title);
+            renderMinimizedDock();
+        }
+
+        function toggleMaximizeWindow(modalId) {
+            const card = document.querySelector(`#${modalId} .modal-card`);
+            if (card) card.classList.toggle('maximized');
+        }
+
+        function renderMinimizedDock() {
+            const dock = document.getElementById('minimizedDock');
+            let html = '';
+            minimizedWindows.forEach((title, id) => {
+                html += `<div class="minimized-pill" onclick="openWindow('${id}')"><span>${title}</span><span>▲</span></div>`;
+            });
+            dock.innerHTML = html;
+        }
+
+        function closeAllModals() {
+            document.querySelectorAll('.drawer-overlay').forEach(m => m.classList.remove('open'));
+        }
+
+        function closeModals(event) {
+            if (event.target.classList.contains('drawer-overlay')) {
+                event.target.classList.remove('open');
+            }
+        }
+
+        function setScreenDimmer(val, showHudPill = false) {
+            currentDimmerPct = parseInt(val, 10);
+            document.getElementById('dimmerValLbl').textContent = currentDimmerPct + '%';
+            const slider = document.getElementById('dimmerRangeSlider');
+            if (slider) slider.value = currentDimmerPct;
+
+            const alpha = (currentDimmerPct / 100) * 0.8;
+            document.getElementById('screenDimmer').style.background = `rgba(18, 10, 2, ${alpha})`;
+
+            if (showHudPill) {
+                const brightnessPct = 100 - currentDimmerPct;
+                const pill = document.getElementById('brightnessHudPill');
+                document.getElementById('brightnessBarFill').style.height = brightnessPct + '%';
+                document.getElementById('brightnessPctLabel').textContent = brightnessPct + '%';
+                pill.classList.add('show');
+            }
+        }
+
+        function setColumnMode(mode, btn) {
+            columnMode = mode;
+            if (btn) highlightSegment(btn);
+            recalculateLayoutAndRender();
+            showToast(mode === '2' ? "📖 Книжный разворот на 2 колонки" : (mode === '1' ? "📱 1 колонка" : "🔄 Авто-колонки"));
+        }
+
+        function setCustomFontSize(px) {
+            document.documentElement.style.setProperty('--font-size', px + 'px');
+            document.getElementById('fontSizeValLbl').textContent = px + ' px';
+            recalculateLayoutAndRender();
+        }
+
+        function setCustomLineHeight(lh) {
+            document.documentElement.style.setProperty('--line-height', lh);
+            document.getElementById('lineHeightValLbl').textContent = lh;
+            recalculateLayoutAndRender();
+        }
+
+        function setCustomMargins(px) {
+            document.documentElement.style.setProperty('--side-margin', px + 'px');
+            document.getElementById('marginValLbl').textContent = px + ' px';
+            recalculateLayoutAndRender();
+        }
+
+        let isJustified = false, isBoldText = false;
+        function toggleTextAlignment() {
+            isJustified = !isJustified;
+            document.documentElement.style.setProperty('--text-align', isJustified ? 'justify' : 'left');
+            const btn = document.getElementById('alignJustifyBtn');
+            btn.textContent = isJustified ? 'По ширине' : 'По левому краю';
+            btn.classList.toggle('active', isJustified);
+            renderActivePage(false);
+        }
+
+        function toggleBoldWeight() {
+            isBoldText = !isBoldText;
+            document.documentElement.style.setProperty('--font-weight', isBoldText ? '600' : '400');
+            document.getElementById('boldWeightBtn').classList.toggle('active', isBoldText);
+            recalculateLayoutAndRender();
+        }
+
+        async function toggleAndroidFullscreen() {
+            try {
+                if (!document.fullscreenElement) {
+                    await document.documentElement.requestFullscreen();
+                    document.getElementById('fullscreenBtn').classList.add('active');
+                } else {
+                    await document.exitFullscreen();
+                    document.getElementById('fullscreenBtn').classList.remove('active');
+                }
+            } catch (e) {}
+        }
+
+        function recalculateLayoutAndRender() {
+            const firstParaOnCurrentPage = paginatedPages[currentPageIndex]?.[0]?.pIdx || 0;
+            paginateBookParagraphs(currentBook.levels[currentLevelIndex] || []);
+            const restoredPage = paginatedPages.findIndex(p => p.some(item => item.pIdx >= firstParaOnCurrentPage));
+            currentPageIndex = restoredPage !== -1 ? restoredPage : 0;
+            renderActivePage(false);
+        }
+
+        window.addEventListener('resize', () => {
+            clearTimeout(window._resizeTimer);
+            window._resizeTimer = setTimeout(recalculateLayoutAndRender, 150);
+        });
+
+        // =========================================================================
+        // 7. РЕНДЕРИНГ КНИГИ И ПЕРЕКЛЮЧЕНИЕ УРОВНЕЙ ИИ-ДИСТИЛЛЯТОРА
+        // =========================================================================
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+        }
+
+        function formatBionicParagraph(text) {
+            const source = String(text ?? '');
+            if (!isBionicEnabled) return escapeHtml(source).replace(/\n/g, '<br>');
+            return source.split(/(\s+)/).map(token => {
+                const safe = escapeHtml(token);
+                if (token.trim().length < 3) return safe;
+                const boldLen = Math.ceil(token.length * 0.4);
+                return `<b>${escapeHtml(token.slice(0, boldLen))}</b>${escapeHtml(token.slice(boldLen))}`;
+            }).join('').replace(/\n/g, '<br>');
+        }
+
+        function toggleBionicReading() {
+            isBionicEnabled = !isBionicEnabled;
+            document.getElementById('bionicToggleBtn').classList.toggle('active', isBionicEnabled);
+            renderActivePage(false);
+        }
+
+        async function renderCurrentBookStream(resetToFirstPage = false) {
+            stopTts();
+            const meta = LEVEL_META[currentLevelIndex];
+
+            document.getElementById('modeTitle').textContent = meta.title;
+            document.getElementById('hubDistillTileLabel').textContent = `Краткий текст (${meta.badge})`;
+
+            for (let i = 0; i < 4; i++) {
+                const card = document.getElementById('distillCard' + i);
+                if (card) card.classList.toggle('active', i === currentLevelIndex);
+            }
+
+            if (!currentBook.levels[currentLevelIndex]) {
+                currentBook.levels[currentLevelIndex] = await compressEntireBook(currentBook.levels[0], currentLevelIndex);
+            }
+
+            const paragraphs = currentBook.levels[currentLevelIndex];
+            const originalWords = currentBook.levels[0].join(' ').split(/\s+/).length;
+            const savedMin = Math.round((originalWords / 180) * meta.savedRatio);
+
+            const badgeEl = document.getElementById('timeSavedBadge');
+            badgeEl.textContent = currentLevelIndex > 0
+                ? `⚡ Экономия ~${Math.max(1, savedMin)} мин (${paragraphs.length} блоков)`
+                : `Полный текст (${paragraphs.length} абз.)`;
+
+            if (resetToFirstPage) currentPageIndex = 0;
+            paginateBookParagraphs(paragraphs);
+            if (resetToFirstPage && currentLevelIndex === 0) restoreReadingPosition();
+            renderActivePage(true);
+        }
+
+        function setSliderLevel(levelIdx) {
+            currentLevelIndex = levelIdx;
+            document.getElementById('compressionSlider').value = levelIdx;
+            if (navigator.vibrate) navigator.vibrate(12);
+            renderCurrentBookStream(true);
+        }
+
+        // =========================================================================
+        // 8. ВСЕЯДНЫЙ ПАРСЕР ФАЙЛОВ (EPUB, FB2, PDF, CBZ, CBR, DOCX, RTF, TXT)
+        // =========================================================================
+        const entityDecoderArea = document.createElement('textarea');
+        function decodeHtmlEntities(str) {
+            entityDecoderArea.innerHTML = str;
+            return entityDecoderArea.value;
+        }
+
+        function extractParagraphsRobust(rawMarkup) {
+            if (!rawMarkup || typeof rawMarkup !== 'string') return [];
+            let cleaned = rawMarkup
+                .replace(/<!--[\s\S]*?-->/g, ' ')
+                .replace(/<(head|style|script|svg|binary|description)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+                .replace(/<\/?(p|div|h[1-6]|li|blockquote|section|article|tr|br|title|subtitle|v|stanza|epigraph|w:p)\b[^>]*\/?>/gi, '\n\n')
+                .replace(/<[^>]+>/g, ' ');
+
+            cleaned = decodeHtmlEntities(cleaned);
+
+            const rawLines = cleaned
+                .split(/\n\s*\n+/)
+                .map(s => s.replace(/\s+/g, ' ').trim())
+                .filter(s => s.length > 1);
+
+            const finalParagraphs = [];
+            for (const line of rawLines) {
+                if (line.length > 1100) {
+                    const sentences = line.match(/[^.!?]+[.!?]+(\s|$)/g) || [line];
+                    for (let i = 0; i < sentences.length; i += 4) {
+                        const chunk = sentences.slice(i, i + 4).join(' ').trim();
+                        if (chunk.length > 1) finalParagraphs.push(chunk);
+                    }
+                } else {
+                    finalParagraphs.push(line);
+                }
+            }
+            return finalParagraphs;
+        }
+
+        function decodeSmartBuffer(arrayBuffer) {
+            const uint8 = new Uint8Array(arrayBuffer);
+            if (uint8.length >= 2) {
+                if (uint8[0] === 0xFF && uint8[1] === 0xFE) return new TextDecoder('utf-16le').decode(uint8);
+                if (uint8[0] === 0xFE && uint8[1] === 0xFF) return new TextDecoder('utf-16be').decode(uint8);
+            }
+            const utf8Text = new TextDecoder('utf-8', { fatal: false }).decode(uint8);
+            const headSample = utf8Text.slice(0, 800).toLowerCase();
+            const brokenChars = (utf8Text.match(/\uFFFD/g) || []).length;
+            if (headSample.includes('windows-1251') || headSample.includes('cp1251') || brokenChars > 8) {
+                try { return new TextDecoder('windows-1251').decode(uint8); } catch (e) { return utf8Text; }
+            }
+            return utf8Text;
+        }
+
+        async function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            closeAllModals();
+            showToast("⏳ Открываем и разбиваем книгу на страницы...");
+
+            if (file.size > 100*1024*1024) { alert('Книга больше 100 МБ. Для телефона откройте меньший файл, чтобы не перегрузить память.');event.target.value='';return; }
+            const name = file.name.toLowerCase();
+            const cleanTitle = file.name.replace(/\.(epub|fb2|cbz|cbr|txt|pdf|docx|rtf|md|html|zip)$/i, '');
+
+            try {
+                if (name.endsWith('.cbr')) throw new Error('CBR (RAR) не поддерживается. Конвертируйте файл в CBZ (ZIP).');
+                if (name.endsWith('.cbz')) {
+                    const comicData = await parseComicArchive(file, cleanTitle);
+                    if (comicData && comicData.pages.length > 0) {
+                        const comicBook = {
+                            id: "comic_" + Date.now(),
+                            title: cleanTitle,
+                            author: `Комикс (${comicData.pages.length} стр.)`,
+                            genre: "fiction",
+                            badge: "Комикс",
+                            coverGradient: "linear-gradient(135deg, #B91C1C 0%, #1E1B4B 100%)",
+                            coverUrl: comicData.pages[0],
+                            isComic: true,
+                            comicPages: comicData.pages,
+                            levels: { 0: [`Комикс «${cleanTitle}»`] }
+                        };
+                        libraryBooks.unshift(comicBook);
+                        saveBookToDatabase(comicBook);
+                        selectBookFromShelf(comicBook.id);
+                        event.target.value = "";
+                        return;
+                    }
+                }
+
+                let parsed = { title: cleanTitle, author: "Моя библиотека", paragraphs: [], coverUrl: null, comicPages: null };
+
+                if (name.endsWith('.epub') || name.endsWith('.zip') || name.endsWith('.docx')) {
+                    parsed = await parseArchiveBook(file, cleanTitle);
+                } else if (name.endsWith('.fb2')) {
+                    const buf = await file.arrayBuffer();
+                    parsed = parseFb2Content(decodeSmartBuffer(buf), cleanTitle);
+                } else if (name.endsWith('.pdf')) {
+                    parsed.paragraphs = await parsePdfFile(file);
+                    parsed.author = "PDF Документ";
+                } else if (name.endsWith('.rtf')) {
+                    const buf = await file.arrayBuffer();
+                    parsed.paragraphs = parseRtfContent(decodeSmartBuffer(buf));
+                } else {
+                    const buf = await file.arrayBuffer();
+                    parsed.paragraphs = extractParagraphsRobust(decodeSmartBuffer(buf));
+                }
+
+                if (!parsed.paragraphs || parsed.paragraphs.length === 0) {
+                    alert("Не удалось извлечь текст из файла.");
+                    return;
+                }
+
+                const palettes = [
+                    "linear-gradient(135deg, #312E81 0%, #1E1B4B 100%)",
+                    "linear-gradient(135deg, #701A75 0%, #3B0764 100%)",
+                    "linear-gradient(135deg, #14532D 0%, #052E16 100%)",
+                    "linear-gradient(135deg, #7C2D12 0%, #431407 100%)"
+                ];
+
+                const newBook = {
+                    id: "book_" + Date.now(),
+                    title: parsed.title,
+                    author: parsed.author || "Книга",
+                    genre: "auto",
+                    badge: "Книга",
+                    coverGradient: palettes[libraryBooks.length % palettes.length],
+                    coverUrl: parsed.coverUrl || null,
+                    isComic: false,
+                    levels: { 0: parsed.paragraphs }
+                };
+
+                libraryBooks.unshift(newBook);
+                saveBookToDatabase(newBook);
+                selectBookFromShelf(newBook.id);
+                showToast(`📖 Книга готова (${paginatedPages.length} стр.)`);
+            } catch (err) {
+                alert("Ошибка чтения файла: " + err.message);
+            }
+            event.target.value = "";
+        }
+
+        async function parseComicArchive(file, fallbackTitle) {
+            const buf = await file.arrayBuffer();
+            const bytes = new Uint8Array(buf);
+            if (bytes[0] === 0x50 && bytes[1] === 0x4B) {
+                const zip = await JSZip.loadAsync(buf);
+                const imgPaths = Object.keys(zip.files)
+                    .filter(p => !zip.files[p].dir && /\.(jpe?g|png|webp|gif)$/i.test(p))
+                    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+                const pages = [];
+                for (const p of imgPaths) {
+                    const b64 = await zip.file(p).async("base64");
+                    const ext = p.toLowerCase().endsWith('.png') ? 'png' : 'jpeg';
+                    pages.push(`data:image/${ext};base64,${b64}`);
+                }
+                return { title: fallbackTitle, pages };
+            }
+            const pages = [];
+            let i = 0;
+            while (i < bytes.length - 4 && pages.length < 150) {
+                if (bytes[i] === 0xFF && bytes[i + 1] === 0xD8 && bytes[i + 2] === 0xFF) {
+                    let end = i + 3;
+                    while (end < bytes.length - 1) {
+                        if (bytes[end] === 0xFF && bytes[end + 1] === 0xD9) { end += 2; break; }
+                        end++;
+                    }
+                    if (end - i > 4096) {
+                        pages.push(URL.createObjectURL(new Blob([bytes.subarray(i, end)], { type: 'image/jpeg' })));
+                        i = end; continue;
+                    }
+                }
+                i++;
+            }
+            return { title: fallbackTitle, pages };
+        }
+
+        async function parseArchiveBook(file, fallbackTitle) {
+            if (!window.JSZip) throw new Error('Для EPUB/DOCX/CBZ требуется JSZip: проверьте подключение к интернету при первом запуске.');
+            const zip = await JSZip.loadAsync(file);
+            const allPaths = Object.keys(zip.files).filter(p => !zip.files[p].dir);
+
+            const docxXml = allPaths.find(p => p.toLowerCase() === 'word/document.xml');
+            if (docxXml) {
+                const rawXml = await zip.file(docxXml).async("string");
+                return { title: fallbackTitle, author: "Документ Word", paragraphs: extractParagraphsRobust(rawXml), coverUrl: null };
+            }
+
+            const fb2Entry = allPaths.find(p => p.toLowerCase().endsWith('.fb2'));
+            if (fb2Entry) {
+                const buf = await zip.file(fb2Entry).async("arraybuffer");
+                return parseFb2Content(decodeSmartBuffer(buf), fallbackTitle);
+            }
+
+            let title = fallbackTitle, author = "EPUB Книга", coverUrl = null, orderedPaths = [];
+            const opfPath = allPaths.find(path => path.toLowerCase().endsWith('.opf'));
+            if (opfPath) {
+                const opfBuf = await zip.file(opfPath).async("arraybuffer");
+                const opfText = decodeSmartBuffer(opfBuf);
+                const opfDir = opfPath.includes('/') ? opfPath.slice(0, opfPath.lastIndexOf('/') + 1) : '';
+
+                const titleMatch = opfText.match(/<(?:dc:)?title[^>]*>([\s\S]*?)<\/(?:dc:)?title>/i);
+                if (titleMatch && titleMatch[1].trim()) title = decodeHtmlEntities(titleMatch[1].trim());
+
+                const creatorMatch = opfText.match(/<(?:dc:)?creator[^>]*>([\s\S]*?)<\/(?:dc:)?creator>/i);
+                if (creatorMatch && creatorMatch[1].trim()) author = decodeHtmlEntities(creatorMatch[1].trim());
+
+                const manifestMap = {};
+                const itemRegex = /<(?:\w+:)?item\b([^>]+?)\/?>/gi;
+                let itemMatch;
+                while ((itemMatch = itemRegex.exec(opfText)) !== null) {
+                    const attrs = itemMatch[1];
+                    const idM = attrs.match(/\bid\s*=\s*["']([^"']+)["']/i);
+                    const hrefM = attrs.match(/\bhref\s*=\s*["']([^"']+)["']/i);
+                    if (idM && hrefM) manifestMap[idM[1]] = opfDir + decodeURIComponent(hrefM[1].split('#')[0]);
+                }
+
+                const itemrefRegex = /<(?:\w+:)?itemref\b([^>]+?)\/?>/gi;
+                let refMatch;
+                while ((refMatch = itemrefRegex.exec(opfText)) !== null) {
+                    const idrefM = refMatch[1].match(/\bidref\s*=\s*["']([^"']+)["']/i);
+                    if (idrefM && manifestMap[idrefM[1]]) orderedPaths.push(manifestMap[idrefM[1]]);
+                }
+            }
+
+            const imageFiles = allPaths.filter(p => /\.(jpe?g|png|webp)$/i.test(p)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+            const coverEntry = imageFiles.find(p => /cover/i.test(p)) || imageFiles[0];
+            if (coverEntry) {
+                try {
+                    const imgBase64 = await zip.file(coverEntry).async("base64");
+                    const ext = coverEntry.toLowerCase().endsWith('.png') ? 'png' : 'jpeg';
+                    coverUrl = `data:image/${ext};base64,${imgBase64}`;
+                } catch (e) {}
+            }
+
+            const allContentFiles = allPaths.filter(p =>
+                /\.(xhtml|html|htm|xml|txt)$/i.test(p) &&
+                !/(container\.xml|toc\.ncx|nav\.xhtml|\.opf)$/i.test(p)
+            ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+            const resolvedFiles = [];
+            const usedSet = new Set();
+            for (const target of orderedPaths) {
+                const normTarget = target.replace(/^\.\//, '').toLowerCase();
+                const fileNameOnly = normTarget.split('/').pop();
+                const match = allPaths.find(p => p.toLowerCase() === normTarget) ||
+                              allPaths.find(p => p.toLowerCase().endsWith('/' + fileNameOnly) || p.toLowerCase() === fileNameOnly);
+                if (match && !usedSet.has(match)) { resolvedFiles.push(match); usedSet.add(match); }
+            }
+            // EPUB: spine задаёт последовательность чтения. Включение всех HTML
+            // добавляло обложки, оглавления, рекламу и сноски в конец книги.
+            if (resolvedFiles.length === 0) {
+                for (const f of allContentFiles) {
+                    if (!/(^|\/)(nav|toc|cover|titlepage|copyright|imprint)[._-]/i.test(f) && !usedSet.has(f)) {
+                        resolvedFiles.push(f); usedSet.add(f);
+                    }
+                }
+            }
+
+            const paragraphs = [];
+            for (const path of resolvedFiles) {
+                const buf = await zip.file(path).async("arraybuffer");
+                paragraphs.push(...extractParagraphsRobust(decodeSmartBuffer(buf)));
+            }
+
+            return { title, author, paragraphs, coverUrl };
+        }
+
+        function parseFb2Content(rawXml, fallbackTitle) {
+            let title = fallbackTitle, author = "FB2 Книга", coverUrl = null;
+            const titleM = rawXml.match(/<book-title[^>]*>([\s\S]*?)<\/book-title>/i);
+            if (titleM && titleM[1].trim()) title = decodeHtmlEntities(titleM[1].trim());
+            const firstM = rawXml.match(/<first-name[^>]*>([\s\S]*?)<\/first-name>/i);
+            const lastM = rawXml.match(/<last-name[^>]*>([\s\S]*?)<\/last-name>/i);
+            if (firstM || lastM) author = `${firstM ? firstM[1].trim() : ''} ${lastM ? lastM[1].trim() : ''}`.trim();
+            const binaryM = rawXml.match(/<binary\b[^>]*>([\s\S]*?)<\/binary>/i);
+            if (binaryM && binaryM[1]) {
+                const cleanB64 = binaryM[1].replace(/\s+/g, '');
+                if (cleanB64.length > 100) coverUrl = `data:image/jpeg;base64,${cleanB64}`;
+            }
+            const bodyM = rawXml.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i);
+            return { title, author, paragraphs: extractParagraphsRobust(bodyM ? bodyM[1] : rawXml), coverUrl };
+        }
+
+        async function parsePdfFile(file) {
+            const arrayBuffer = await file.arrayBuffer();
+            if (!window.pdfjsLib) throw new Error('Для PDF нужен модуль PDF.js: проверьте подключение к интернету при первом запуске.');
+            setupPdfWorker();
+            const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            const paragraphs = [];
+            for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                const page = await pdf.getPage(pageNum);
+                const textContent = await page.getTextContent();
+                const pageText = textContent.items.map(item => item.str).join(' ').replace(/\s+/g, ' ').trim();
+                if (pageText.length > 5) {
+                    const sentences = pageText.match(/[^.!?]+[.!?]+(\s|$)/g) || [pageText];
+                    for (let i = 0; i < sentences.length; i += 4) paragraphs.push(sentences.slice(i, i + 4).join(' ').trim());
+                }
+            }
+            return paragraphs;
+        }
+
+        function parseRtfContent(rtf) {
+            const stripped = rtf.replace(/\\par\b/g, '\n\n').replace(/\{\\[^{}]+\}/g, '').replace(/\\[a-z]+\d*\s?/gi, '').replace(/[{}]/g, '');
+            return extractParagraphsRobust(stripped);
+        }
+
+        // =========================================================================
+        // 9. СТУДИЯ ОЗВУЧКИ (6 ГОЛОСОВ), ТЕЛЕСУФЛЕР, ПЕРЕВОДЧИК И КАРТОЧКИ
+        // =========================================================================
+        const VOICE_SLOTS = [
+            {id:0,label:'Дмитрий • низкий',gender:'male',variantIdx:0,pitch:.76,rateMod:.94},
+            {id:1,label:'Павел • спокойный',gender:'male',variantIdx:1,pitch:.89,rateMod:1},
+            {id:2,label:'Юрий • энергичный',gender:'male',variantIdx:2,pitch:1.01,rateMod:1.07},
+            {id:3,label:'Светлана • тёплый',gender:'female',variantIdx:0,pitch:1.07,rateMod:.94},
+            {id:4,label:'Дарья • ясный',gender:'female',variantIdx:1,pitch:1.16,rateMod:1.02},
+            {id:5,label:'Ирина • мягкий',gender:'female',variantIdx:2,pitch:1.24,rateMod:.90}
+        ];
+        let allSystemVoices=[],maleVoicePool=[],femaleVoicePool=[];
+        let manualSlotVoiceMap={};
+        try{manualSlotVoiceMap=JSON.parse(localStorage.getItem('lumen_manual_voices')||'{}');}catch{}
+        let selectedPersonaIdx=Number(localStorage.getItem('lumen_voice_profile')||0);
+        if(selectedPersonaIdx<0||selectedPersonaIdx>5)selectedPersonaIdx=0;
+        let customPitchValue=VOICE_SLOTS[selectedPersonaIdx].pitch, masterTtsVolume=1;
+        let isTtsPlaying=false,currentTtsParagraphIdx=0;
+        let ttsSpeeds=[1,1.25,1.5,.85],ttsSpeedIdx=0;
+        let ttsToken=0,ttsChunks=[],ttsChunkPos=0;
+
+        function classifyVoiceGender(voice) {
+            const name=(`${voice.name} ${voice.voiceURI}`).toLowerCase();
+            if(/\b(male|dmitry|pavel|yuri|maxim|boris|nicolai|aleksandr|alexander|andrey|ivan|george|michael|david)\b|мужск|дмитрий|павел|юрий|максим|александр|андрей|николай|борис/i.test(name))return 'male';
+            if(/\b(female|svetlana|darya|dariya|irina|milena|katya|elena|tatyana|anna|natasha|victoria|samantha|zuzana)\b|женск|светлана|дарья|ирина|милена|елена|анна|татьяна/i.test(name))return 'female';
+            return 'unknown'; // Не приписываем пол неизвестному голосу.
+        }
+        function detectBookSpeechLang() {
+            const p=(currentBook?.levels?.[0]||[]).slice(0,20).join(' ').slice(0,3000);
+            if(/[іїєґ]/i.test(p))return 'uk';
+            if(/[а-яё]/i.test(p))return 'ru';
+            return 'en';
+        }
+        function getRelevantVoices() {
+            const lang=detectBookSpeechLang();
+            const specific=allSystemVoices.filter(v=>v.lang.toLowerCase().startsWith(lang));
+            return specific.length?specific:allSystemVoices;
+        }
+        function loadSystemVoices() {
+            if(!('speechSynthesis' in window))return;
+            allSystemVoices=window.speechSynthesis.getVoices()||[];
+            const relevant=getRelevantVoices();
+            maleVoicePool=relevant.filter(v=>classifyVoiceGender(v)==='male');
+            femaleVoicePool=relevant.filter(v=>classifyVoiceGender(v)==='female');
+            VOICE_SLOTS.forEach((slot,idx)=>{
+                const resolved=resolveVoiceForSlot(idx);
+                const explicit=manualSlotVoiceMap[idx] && allSystemVoices.find(v=>v.voiceURI===manualSlotVoiceMap[idx]);
+                const actuallyMatched=explicit || (slot.gender==='male'?maleVoicePool.length:femaleVoicePool.length);
+                const el=document.getElementById('voiceSub'+idx);
+                if(el)el.textContent=resolved ? (actuallyMatched?resolved.name.replace(/Microsoft |Google /gi,'').slice(0,19):'Профиль тембра*') : 'Синтезатор не найден';
+            });
+            const badge=document.getElementById('maleCountBadge');
+            if(badge)badge.textContent=`На Android: ${maleVoicePool.length} ♂ / ${femaleVoicePool.length} ♀`;
+            const note=document.getElementById('voiceAvailabilityNote');
+            if(note)note.textContent=maleVoicePool.length>=3 && femaleVoicePool.length>=3
+                ? 'Найдены мужские и женские системные голоса. Вы можете закрепить конкретный голос за любой из шести кнопок.'
+                : 'Это шесть настраиваемых профилей. Android предоставил '+allSystemVoices.length+' голос(ов), распознано: '+maleVoicePool.length+' муж. / '+femaleVoicePool.length+' жен. Для шести реальных разных голосов установите соответствующие TTS-голоса в системе и назначьте их ниже. При отсутствии голосов используется изменение высоты и темпа одного синтезатора.';
+            const sel=document.getElementById('systemVoiceSelect');
+            if(sel){
+                sel.innerHTML=`<option value="">Автоподбор / выбрать голос Android…</option>`+relevant.map(v=>
+                    `<option value="${escapeHtml(v.voiceURI)}">${escapeHtml(v.name)} (${escapeHtml(v.lang)})</option>`).join('');
+                sel.value=manualSlotVoiceMap[selectedPersonaIdx]||'';
+            }
+            const voice=resolveVoiceForSlot(selectedPersonaIdx);
+            const label=document.getElementById('activeVoiceEngineLabel');
+            if(label)label.textContent=voice?`Синтезатор: ${voice.name} (${voice.lang})`:'Доступных голосов пока нет. Проверьте настройки «Синтез речи» Android.';
+        }
+        function resolveVoiceForSlot(idx) {
+            const manual=allSystemVoices.find(v=>v.voiceURI===manualSlotVoiceMap[idx]);
+            if(manual)return manual;
+            const slot=VOICE_SLOTS[idx];
+            const pool=slot.gender==='male'?maleVoicePool:femaleVoicePool;
+            if(pool.length)return pool[slot.variantIdx%pool.length];
+            return getRelevantVoices()[0]||null;
+        }
+        function bindManualVoiceToCurrentSlot(uri) {
+            if(uri)manualSlotVoiceMap[selectedPersonaIdx]=uri;
+            else delete manualSlotVoiceMap[selectedPersonaIdx];
+            localStorage.setItem('lumen_manual_voices',JSON.stringify(manualSlotVoiceMap));
+            loadSystemVoices(); previewCurrentVoice();
+        }
+        function selectVoicePersona(idx) {
+            selectedPersonaIdx=idx;localStorage.setItem('lumen_voice_profile',String(idx));
+            customPitchValue=VOICE_SLOTS[idx].pitch;
+            document.getElementById('pitchFineSlider').value=customPitchValue;
+            document.getElementById('ttsPitchLabel').textContent=customPitchValue.toFixed(2);
+            document.querySelectorAll('.persona-chip').forEach(c=>c.classList.toggle('active',Number(c.dataset.pidx)===idx));
+            loadSystemVoices();
+            if(isTtsPlaying)speakParagraphAt(currentTtsParagraphIdx);
+        }
+        function onCustomPitchSlide(val) {
+            customPitchValue=Number(val);
+            document.getElementById('ttsPitchLabel').textContent=customPitchValue.toFixed(2);
+            if(isTtsPlaying)speakParagraphAt(currentTtsParagraphIdx);
+        }
+        function setMasterTtsVolume(val) {
+            masterTtsVolume=Number(val);
+            const pct=Math.round(masterTtsVolume*100)+'%';
+            document.getElementById('masterVolumeVal').textContent=pct;
+            document.getElementById('ttsVolLabel').textContent=pct;
+            document.getElementById('masterVolumeSlider').value=masterTtsVolume;
+            document.getElementById('ttsVolumeSlider').value=masterTtsVolume;
+            if(isTtsPlaying)speakParagraphAt(currentTtsParagraphIdx);
+        }
+        function configureUtteranceWithSlotVoice(u,idx) {
+            const voice=resolveVoiceForSlot(idx),slot=VOICE_SLOTS[idx];
+            u.lang=voice?.lang || ({ru:'ru-RU',uk:'uk-UA',en:'en-US'}[detectBookSpeechLang()]||'ru-RU');
+            if(voice)u.voice=voice;
+            u.volume=masterTtsVolume;
+            u.pitch=customPitchValue;
+            u.rate=Math.max(.5,Math.min(2,ttsSpeeds[ttsSpeedIdx]*slot.rateMod));
+        }
+        function previewCurrentVoice() {
+            if(!('speechSynthesis' in window)){showToast('Озвучка не поддерживается браузером');return;}
+            stopTts();loadSystemVoices();
+            const u=new SpeechSynthesisUtterance('Это проба голоса. Выберите наиболее приятный тембр для чтения книги.');
+            configureUtteranceWithSlotVoice(u,selectedPersonaIdx);
+            speechSynthesis.speak(u);
+        }
+        function splitTtsText(text,maxChars=180) {
+            const result=[];
+            const sentenceParts=String(text||'').match(/[^.!?…]+[.!?…]*\s*/g)||[String(text||'')];
+            let current='';
+            for(const sentence of sentenceParts){
+                if((current+sentence).length<=maxChars){current+=sentence;continue;}
+                if(current.trim())result.push(current.trim());
+                current='';
+                if(sentence.length<=maxChars){current=sentence;continue;}
+                const tokens=sentence.match(/\S+\s*/g)||[];
+                for(const word of tokens){
+                    if((current+word).length>maxChars && current.trim()){result.push(current.trim());current='';}
+                    // Даже если очень длинное слово, разделяем без потери символов.
+                    if(word.length>maxChars){
+                        let w=word;while(w.length>maxChars){result.push(w.slice(0,maxChars));w=w.slice(maxChars);}current=w;
+                    }else current+=word;
+                }
+            }
+            if(current.trim())result.push(current.trim());
+            return result.length?result:[' '];
+        }
+        function updateTtsButton(paused=false) {
+            const btn=document.getElementById('ttsPlayPauseBtn');
+            if(btn)btn.textContent=!isTtsPlaying?'▶ Начать озвучку':paused?'▶ Продолжить':'⏸ Пауза';
+        }
+        function startOrPauseTts() {
+            if(!('speechSynthesis' in window)){showToast('В браузере нет синтеза речи');return;}
+            if(isTtsPlaying){
+                if(speechSynthesis.paused){speechSynthesis.resume();updateTtsButton(false);}
+                else{speechSynthesis.pause();updateTtsButton(true);}
+                return;
+            }
+            isTtsPlaying=true;loadSystemVoices();updateTtsButton(false);
+            const first=paginatedPages[currentPageIndex]?.[0]?.pIdx ?? 0;
+            speakParagraphAt(first);
+        }
+        function speakParagraphAt(idx) {
+            if(!isTtsPlaying || !('speechSynthesis' in window))return;
+            const paragraphs=currentBook.levels[currentLevelIndex]||[];
+            if(idx>=paragraphs.length){stopTts();return;}
+            const token=++ttsToken;
+            speechSynthesis.cancel();
+            currentTtsParagraphIdx=Math.max(0,idx);
+            ttsChunks=splitTtsText(paragraphs[currentTtsParagraphIdx]);ttsChunkPos=0;
+            if(paginationMode==='paged'){
+                const p=paginatedPages.findIndex(page=>page.some(item=>item.pIdx===currentTtsParagraphIdx));
+                if(p>=0&&p!==currentPageIndex){currentPageIndex=p;renderActivePage(false);}
+            }
+            setTimeout(()=>{if(ttsToken!==token)return;document.querySelectorAll('#bookContent p').forEach(node=>node.classList.toggle('tts-active-p',Number(node.dataset.pidx)===currentTtsParagraphIdx));},70);
+            const readChunk=()=>{
+                if(!isTtsPlaying||ttsToken!==token)return;
+                if(ttsChunkPos>=ttsChunks.length){speakParagraphAt(currentTtsParagraphIdx+1);return;}
+                const u=new SpeechSynthesisUtterance(ttsChunks[ttsChunkPos++]);
+                configureUtteranceWithSlotVoice(u,selectedPersonaIdx);
+                u.onend=()=>{if(ttsToken===token && isTtsPlaying)readChunk();};
+                u.onerror=e=>{if(ttsToken!==token||!isTtsPlaying)return;
+                    if(e.error==='interrupted'||e.error==='canceled')return;
+                    stopTts();showToast('Озвучка остановлена: '+(e.error||'ошибка синтеза'));
+                };
+                speechSynthesis.speak(u);
+            };
+            setTimeout(readChunk,40);
+        }
+        function cycleTtsSpeed() {
+            ttsSpeedIdx=(ttsSpeedIdx+1)%ttsSpeeds.length;
+            document.getElementById('ttsRateBtn').textContent=ttsSpeeds[ttsSpeedIdx]+'x';
+            if(isTtsPlaying)speakParagraphAt(currentTtsParagraphIdx);
+        }
+        function stopTts() {
+            ttsToken++;isTtsPlaying=false;
+            if('speechSynthesis' in window)speechSynthesis.cancel();
+            document.querySelectorAll('#bookContent p.tts-active-p').forEach(p=>p.classList.remove('tts-active-p'));
+            updateTtsButton();
+        }
+        if('speechSynthesis' in window){
+            loadSystemVoices();window.speechSynthesis.onvoiceschanged=loadSystemVoices;
+        }
+        document.getElementById('pitchFineSlider').value=customPitchValue;
+        document.getElementById('ttsPitchLabel').textContent=customPitchValue.toFixed(2);
+        document.querySelectorAll('.persona-chip').forEach(c=>c.classList.toggle('active',Number(c.dataset.pidx)===selectedPersonaIdx));
+
+                // Авточтение / Телесуфлер (в постраничном режиме плавно перелистывает страницы по таймеру, в ленте — крутит скролл)
+        let isTeleprompterRunning = false, teleprompterSpeed = 3.0, teleprompterRaf = null, pageTurnTimer = null, subPixelAccumulator = 0;
+
+        function setTeleprompterSpeed(val) {
+            teleprompterSpeed = parseFloat(val);
+            document.getElementById('prompterSpeedVal').textContent = teleprompterSpeed + 'x';
+        }
+
+        function startOrPauseTeleprompter() {
+            isTeleprompterRunning = !isTeleprompterRunning;
+            document.getElementById('prompterToggleBtn').textContent = isTeleprompterRunning ? '⏸ Остановить авточтение' : '▶ Запустить авточтение без рук';
+            clearInterval(pageTurnTimer);
+            cancelAnimationFrame(teleprompterRaf);
+
+            if (isTeleprompterRunning) {
+                minimizeWindow('prompterModal');
+                if (paginationMode === 'paged') {
+                    const intervalMs = Math.max(3000, Math.round(28000 / teleprompterSpeed));
+                    pageTurnTimer = setInterval(() => {
+                        if (!isTeleprompterRunning) return;
+                        if (currentPageIndex < paginatedPages.length - 1) turnPage(1);
+                        else startOrPauseTeleprompter();
+                    }, intervalMs);
+                } else {
+                    runTeleprompterLoop();
+                }
+            }
+        }
+
+        function runTeleprompterLoop() {
+            if (!isTeleprompterRunning) return;
+            subPixelAccumulator += teleprompterSpeed * 0.28;
+            if (subPixelAccumulator >= 1) {
+                const px = Math.floor(subPixelAccumulator);
+                window.scrollBy(0, px);
+                subPixelAccumulator -= px;
+            }
+            teleprompterRaf = requestAnimationFrame(runTeleprompterLoop);
+        }
+
+        // Онлайн-переводчик и Карточки слов
+        const DEFAULT_FLASHCARDS = [
+            { word: "Resilience", translation: "Устойчивость / Сила духа", book: "Архитектура Мышления", learned: false },
+            { word: "Ксенолингвист", translation: "Специалист по внеземным языкам", book: "Хроники Горизонта", learned: false },
+            { word: "Deep Work", translation: "Глубокая концентрация без отвлечений", book: "Архитектура Мышления", learned: false }
+        ];
+        let flashcardsDeck = JSON.parse(localStorage.getItem('lumen_flashcards') || 'null') || DEFAULT_FLASHCARDS;
+        let currentFlashcardIdx = 0, currentSelectedPhrase = "", currentTranslatedText = "";
+
+        function toggleInstantTranslator() {
+            isInstantTranslateEnabled = !isInstantTranslateEnabled;
+            const btn = document.getElementById('transToggleSettingBtn');
+            if (btn) {
+                btn.textContent = isInstantTranslateEnabled ? "🌐 Перевод: ВКЛ" : "🌐 Перевод: ВЫКЛ";
+                btn.classList.toggle('active', isInstantTranslateEnabled);
+            }
+            if (!isInstantTranslateEnabled) closeTranslatorPopover();
+            showToast(isInstantTranslateEnabled ? "🌐 Перевод по клику в центре: ВКЛ" : "🌐 Перевод по клику: ВЫКЛ");
+        }
+
+        function extractClickedWord(event) {
+            const sel = window.getSelection();
+            if (sel && sel.toString().trim().length >= 2) return sel.toString().trim().slice(0, 220);
+            let range = null;
+            if (document.caretRangeFromPoint) range = document.caretRangeFromPoint(event.clientX, event.clientY);
+            if (range && range.startContainer && range.startContainer.nodeType === Node.TEXT_NODE) {
+                const text = range.startContainer.textContent, offset = range.startOffset;
+                const l = text.slice(0, offset).match(/[А-ЯЁа-яёA-Za-zÀ-ÿ0-9-]+$/);
+                const r = text.slice(offset).match(/^[А-ЯЁа-яёA-Za-zÀ-ÿ0-9-]+/);
+                const w = (l ? l[0] : '') + (r ? r[0] : '');
+                if (w.length >= 2) return w;
+            }
+            return "";
+        }
+
+        async function triggerOnlineTranslation(phrase) {
+            currentSelectedPhrase = phrase;
+            const popover = document.getElementById('translatorPopover');
+            let targetLang = document.getElementById('targetLangSelect').value;
+            const isCyrillic = /[А-ЯЁа-яё]/.test(phrase);
+            if (isCyrillic && targetLang === 'ru' && !localStorage.getItem('lumen_manual_lang')) {
+                targetLang = 'en';
+                document.getElementById('targetLangSelect').value = 'en';
+            }
+            document.getElementById('transSourceText').textContent = phrase;
+            document.getElementById('transTargetText').textContent = "⏳ Переводим...";
+            document.getElementById('transDictDetails').textContent = "";
+            popover.classList.add('open');
+
+            try {
+                const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${encodeURIComponent(targetLang)}&dt=t&dt=bd&q=${encodeURIComponent(phrase)}`);
+                const data = await res.json();
+                currentTranslatedText = (data[0] || []).map(item => item[0]).join('') || "Перевод не найден";
+                document.getElementById('transTargetText').textContent = currentTranslatedText;
+                if (data[1] && Array.isArray(data[1])) {
+                    document.getElementById('transDictDetails').textContent = data[1].slice(0, 2).map(e => `${e[0]}: ${(e[1] || []).slice(0, 4).join(', ')}`).join(' • ');
+                }
+            } catch (e) {
+                document.getElementById('transTargetText').textContent = "Офлайн режим";
+            }
+        }
+
+        function retranslateCurrentSelection() {
+            localStorage.setItem('lumen_manual_lang', '1');
+            if (currentSelectedPhrase) triggerOnlineTranslation(currentSelectedPhrase);
+        }
+
+        function speakTranslatedWord() {
+            if (!('speechSynthesis' in window) || !currentSelectedPhrase) return;
+            window.speechSynthesis.cancel();
+            const u = new SpeechSynthesisUtterance(currentSelectedPhrase);
+            u.lang = /[А-ЯЁа-яё]/.test(currentSelectedPhrase) ? 'ru-RU' : 'en-US';
+            u.volume = masterTtsVolume;
+            window.speechSynthesis.speak(u);
+        }
+
+        function closeTranslatorPopover() { document.getElementById('translatorPopover').classList.remove('open'); }
+
+        function saveTranslationToFlashcards() {
+            if (!currentSelectedPhrase || !currentTranslatedText) return;
+            if (!flashcardsDeck.find(c => c.word.toLowerCase() === currentSelectedPhrase.toLowerCase())) {
+                flashcardsDeck.unshift({ word: currentSelectedPhrase, translation: currentTranslatedText, book: currentBook.title, learned: false });
+                localStorage.setItem('lumen_flashcards', JSON.stringify(flashcardsDeck));
+            }
+            closeTranslatorPopover();
+            showToast("🃏 Слово добавлено в Карточки!");
+        }
+
+        function switchInsightsTab(tab) {
+            const isFc = tab === 'flashcards';
+            document.getElementById('tabFlashcardsBtn').classList.toggle('active', isFc);
+            document.getElementById('tabQuotesBtn').classList.toggle('active', !isFc);
+            document.getElementById('flashcardsSection').style.display = isFc ? 'block' : 'none';
+            document.getElementById('quotesSection').style.display = isFc ? 'none' : 'block';
+            if (isFc) renderCurrentFlashcard();
+        }
+
+        function renderCurrentFlashcard() {
+            if (flashcardsDeck.length === 0) flashcardsDeck = [...DEFAULT_FLASHCARDS];
+            if (currentFlashcardIdx >= flashcardsDeck.length) currentFlashcardIdx = 0;
+            if (currentFlashcardIdx < 0) currentFlashcardIdx = flashcardsDeck.length - 1;
+            const card = flashcardsDeck[currentFlashcardIdx];
+            const learnedCount = flashcardsDeck.filter(c => c.learned).length;
+            document.getElementById('flashcardInner').classList.remove('flipped');
+            document.getElementById('fcCounterLabel').textContent = `Карточка ${currentFlashcardIdx + 1} из ${flashcardsDeck.length}`;
+            document.getElementById('fcLearnedLabel').textContent = `Выучено: ${learnedCount} / ${flashcardsDeck.length}`;
+            document.getElementById('fcBookSource').textContent = `📖 ${card.book || currentBook.title}`;
+            document.getElementById('fcFrontWord').textContent = card.word;
+            document.getElementById('fcBackTranslation').textContent = card.translation;
+        }
+
+        function flipCurrentFlashcard() { document.getElementById('flashcardInner').classList.toggle('flipped'); }
+        function stepFlashcard(delta) { currentFlashcardIdx += delta; renderCurrentFlashcard(); }
+        function markFlashcardStatus(isLearned) {
+            if (flashcardsDeck[currentFlashcardIdx]) {
+                flashcardsDeck[currentFlashcardIdx].learned = isLearned;
+                localStorage.setItem('lumen_flashcards', JSON.stringify(flashcardsDeck));
+            }
+            stepFlashcard(1);
+        }
+        function speakFlashcardWord() {
+            const card = flashcardsDeck[currentFlashcardIdx];
+            if (!card || !('speechSynthesis' in window)) return;
+            window.speechSynthesis.cancel();
+            const u = new SpeechSynthesisUtterance(card.word);
+            u.lang = /[А-ЯЁа-яё]/.test(card.word) ? 'ru-RU' : 'en-US';
+            window.speechSynthesis.speak(u);
+        }
+
+        // Полки, Поиск, Закладки и Экспорт APK
+        function setShelfStyle(styleName, btnEl) {
+            document.getElementById('woodenShelfContainer').setAttribute('data-shelf', styleName);
+            localStorage.setItem('lumen_shelf_style', styleName);
+            highlightSegment(btnEl);
+        }
+
+        function renderWoodenShelf() {
+            const container = document.getElementById('woodenShelfContainer');
+            let html = '';
+            for (let i = 0; i < libraryBooks.length; i += 3) {
+                const rowBooks = libraryBooks.slice(i, i + 3);
+                html += `<div class="wood-shelf-row">` + rowBooks.map(book => {
+                    const bgStyle = book.coverUrl ? `background-image: url('${book.coverUrl}');` : `background: ${book.coverGradient};`;
+                    return `
+                        <div class="book-3d-card" onclick="selectBookFromShelf('${book.id}')">
+                            <div class="book-cover-art" style="${bgStyle}">
+                                ${book.coverUrl ? '<div class="cover-overlay"></div>' : ''}
+                                <span class="cover-badge">${escapeHtml(book.badge)}</span>
+                                <div class="cover-title">${escapeHtml(book.title)}</div>
+                                <div class="cover-author">${escapeHtml(book.author)}</div>
+                            </div>
+                        </div>
+                    `;
+                }).join('') + `</div>`;
+            }
+            container.innerHTML = html;
+        }
+
+        function selectBookFromShelf(bookId) {
+            const found = libraryBooks.find(b => b.id === bookId);
+            if (!found) return;
+            saveReadingPosition();
+            currentBook = found;
+            currentLevelIndex = 0;
+            currentPageIndex = 0;
+            document.getElementById('compressionSlider').value = 0;
+            closeAllModals();
+            renderCurrentBookStream(true);
+        }
+
+        function performBookSearch(query) {
+            const listEl = document.getElementById('searchResultsList');
+            const q = query.trim().toLowerCase();
+            if (q.length < 2) { listEl.innerHTML = ''; return; }
+            const paragraphs = currentBook.levels[currentLevelIndex] || [];
+            const matches = [];
+            for (let i = 0; i < paragraphs.length && matches.length < 25; i++) {
+                if (paragraphs[i].toLowerCase().includes(q)) matches.push({ idx: i, text: paragraphs[i] });
+            }
+            listEl.innerHTML = matches.length === 0
+                ? `<div style="font-size:15px; opacity:0.6; padding:12px;">Ничего не найдено</div>`
+                : matches.map(m => `
+                    <div class="quote-card" onclick="jumpToParagraphPage(${m.idx})">
+                        <div>${escapeHtml(m.text.slice(0, 180))}...</div>
+                        <div style="font-size:12px; opacity:0.6; margin-top:4px;">Абзац #${m.idx + 1}</div>
+                    </div>
+                `).join('');
+        }
+
+        function saveQuoteFromParagraph(text, pElement) {
+            pElement.classList.add('saved-quote-flash');
+            setTimeout(() => pElement.classList.remove('saved-quote-flash'), 700);
+            if (navigator.vibrate) navigator.vibrate([15, 40, 20]);
+            savedItems.unshift({
+                type: 'quote',
+                bookId: currentBook.id,
+                book: currentBook.title,
+                pageIndex: currentPageIndex,
+                levelBadge: LEVEL_META[currentLevelIndex].badge,
+                text: text.slice(0, 260) + (text.length > 260 ? '…' : ''),
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            });
+            localStorage.setItem('lumen_saved_items', JSON.stringify(savedItems));
+            showToast("✨ Цитата сохранена (🔖)");
+        }
+
+        function addBookmarkHere() {
+            savedItems.unshift({
+                type: 'bookmark',
+                bookId: currentBook.id,
+                book: currentBook.title,
+                pageIndex: currentPageIndex,
+                levelBadge: LEVEL_META[currentLevelIndex].badge,
+                text: `Закладка-ляссе на стр. ${currentPageIndex + 1} из ${paginatedPages.length} («${currentBook.title}»)`,
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            });
+            localStorage.setItem('lumen_saved_items', JSON.stringify(savedItems));
+            renderInsightsModal();
+            showToast("📌 Золотая закладка-ляссе установлена!");
+        }
+
+        function openInsightsModal() {
+            renderCurrentFlashcard();
+            renderInsightsModal();
+            openWindow('insightsModal');
+        }
+
+        function renderInsightsModal() {
+            const listEl = document.getElementById('savedQuotesList');
+            if (!listEl) return;
+            if (savedItems.length === 0) {
+                listEl.innerHTML = `<div style="font-size:14px; opacity:0.6; text-align:center; padding:16px;">Дважды тапни по любому абзацу или в правом верхнем углу страницы</div>`;
+                return;
+            }
+            listEl.innerHTML = savedItems.map((item, idx) => `
+                <div class="quote-card" onclick="jumpToSavedItem(${idx})">
+                    <div>${item.type === 'bookmark' ? '📌 ' : '❝ '}${item.text}</div>
+                    <div style="font-size:12px; opacity:0.65; margin-top:6px; display:flex; justify-content:space-between;">
+                        <span>${item.book} • ${item.levelBadge}</span>
+                        <span>${item.time}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function jumpToSavedItem(idx) {
+            const item = savedItems[idx];
+            if (!item) return;
+            closeAllModals();
+            currentPageIndex = Math.min(paginatedPages.length - 1, item.pageIndex || 0);
+            renderActivePage(true);
+        }
+
+        function exportQuotesToClipboard() {
+            if (savedItems.length === 0) return showToast("Пока нет сохраненных записей");
+            navigator.clipboard.writeText(savedItems.map(i => `• ${i.text} (${i.book})`).join('\n\n'));
+            showToast("📋 Скопировано в буфер обмена!");
+        }
+
+        function setTheme(themeName, btn) {
+            if (themeName === 'dark') document.documentElement.removeAttribute('data-theme');
+            else document.documentElement.setAttribute('data-theme', themeName);
+            highlightSegment(btn);
+        }
+
+        function setFontFamily(family, btn) {
+            document.documentElement.style.setProperty('--reader-font', family);
+            highlightSegment(btn);
+            recalculateLayoutAndRender();
+        }
+
+        function highlightSegment(activeBtn) {
+            if (!activeBtn || !activeBtn.parentElement) return;
+            Array.from(activeBtn.parentElement.children).forEach(b => {
+                if (b.id !== 'bionicToggleBtn') b.classList.remove('active');
+            });
+            activeBtn.classList.add('active');
+        }
+
+        function saveApiKey(val) {
+            // В этой версии облачный анализ не используется; ключи API не храним.
+        }
+
+                function showToast(msg) {
+            const t = document.getElementById('toastMsg');
+            t.textContent = msg;
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 2200);
+        }
+
+        // Часы и батарея на нижнем поле
+        let batteryLevelStr = '';
+        if ('getBattery' in navigator) {
+            navigator.getBattery().then(bat => {
+                const updateBat = () => { batteryLevelStr = `🔋 ${Math.round(bat.level * 100)}% • `; updateFooterClock(); };
+                updateBat();
+                bat.addEventListener('levelchange', updateBat);
+            }).catch(() => {});
+        }
+        function updateFooterClock() {
+            const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const el = document.getElementById('footerClock');
+            if (el) el.textContent = batteryLevelStr + now;
+        }
+        setInterval(updateFooterClock, 15000);
+        updateFooterClock();
+
+        // Офлайн Service Worker и упаковка APK
+        const SW_SOURCE_CODE = `const CACHE_NAME = 'lumenread-offline-v10';
+const OFFLINE_ASSETS=['./','./index.html','./manifest.json','./icon-192.png','./icon-512.png'];
+self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE_NAME).then(c=>c.addAll(OFFLINE_ASSETS)));self.skipWaiting();});
+self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE_NAME).map(k=>caches.delete(k)))));self.clients.claim();});
+self.addEventListener('fetch',e=>{
+ if(e.request.method!=='GET')return;
+ e.respondWith(caches.match(e.request).then(hit=>hit||fetch(e.request).then(response=>{
+   if(response && (response.ok || response.type==='opaque')) {
+     const copy=response.clone();caches.open(CACHE_NAME).then(cache=>cache.put(e.request,copy)).catch(()=>{});
+   }
+   return response;
+ }).catch(()=>caches.match('./index.html'))));
+});`;
+
+        function generateAppIconBlob(size) {
+            return new Promise((resolve) => {
+                const c = document.createElement('canvas'); c.width = size; c.height = size;
+                const ctx = c.getContext('2d');
+                ctx.fillStyle = '#0E1015'; ctx.fillRect(0, 0, size, size);
+                ctx.strokeStyle = '#E5A93C'; ctx.lineWidth = Math.max(4, size * 0.05);
+                ctx.strokeRect(size * 0.18, size * 0.18, size * 0.64, size * 0.64);
+                c.toBlob((b) => resolve(b), 'image/png');
+            });
+        }
+
+        async function downloadCompleteApkZipBundle() {
+            showToast("📦 Упаковка ZIP-комплекта v10...");
+            const zip = new JSZip();
+            const manifestObj = {
+                id: "./index.html",
+                name: "LumenRead — Читалка Будущего",
+                short_name: "LumenRead",
+                start_url: "./index.html",
+                scope: "./",
+                display: "standalone",
+                orientation: "any",
+                background_color: "#0E1015",
+                theme_color: "#0E1015",
+                icons: [
+                    { src: "./icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+                    { src: "./icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" }
+                ]
+            };
+            const cleanPage = document.documentElement.cloneNode(true);
+            const privateContainers = ['bookContent','nlmTreeContainer','characterDossierContainer','searchResultsList','savedQuotesList'];
+            privateContainers.forEach(id => {const el=cleanPage.querySelector('#'+id);if(el)el.replaceChildren();});
+            zip.file("index.html", "<!DOCTYPE html>\n" + cleanPage.outerHTML);
+            zip.file("manifest.json", JSON.stringify(manifestObj, null, 2));
+            zip.file("sw.js", SW_SOURCE_CODE);
+            zip.file("icon-192.png", await generateAppIconBlob(192));
+            zip.file("icon-512.png", await generateAppIconBlob(512));
+            const content = await zip.generateAsync({ type: "blob" });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(content);
+            a.download = "LumenRead_v10_PWA.zip";
+            a.click();
+            showToast("✅ Архив LumenRead_v9_APK_Package.zip скачан!");
+        }
+
+        function initBookDatabase() {
+            const req = indexedDB.open("LumenReadDB_v7", 1);
+            req.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains("books")) db.createObjectStore("books", { keyPath: "id" });
+            };
+            req.onsuccess = (e) => {
+                const db = e.target.result;
+                const getAll = db.transaction("books", "readonly").objectStore("books").getAll();
+                getAll.onsuccess = () => {
+                    if (getAll.result && getAll.result.length > 0) {
+                        libraryBooks = [...getAll.result.reverse(), ...INITIAL_LIBRARY];
+                        currentBook = libraryBooks[0];
+                        renderCurrentBookStream(true);
+                    }
+                };
+            };
+        }
+
+        function saveBookToDatabase(bookObj) {
+            if (bookObj.isComic && bookObj.comicPages && bookObj.comicPages.length > 25) return;
+            const req = indexedDB.open("LumenReadDB_v7", 1);
+            req.onsuccess = (e) => {
+                e.target.result.transaction("books", "readwrite").objectStore("books").put(bookObj);
+            };
+        }
+
+
+        try { localStorage.removeItem('lumen_gemini_key'); } catch(e) {}
+        initStageGestures();
+        if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+            navigator.serviceWorker.register('./sw.js').catch(() => {});
+        }
+        initBookDatabase();
+        renderCurrentBookStream(true);
+    </script>
+</body>
+</html>
